@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+interface=tunvis1
+
+while true; do
+    clear
+    echo "Waiting for tunvis1"
+    ip link | grep tunvis1 && tshark -i $interface --color "$@"
+    sleep 3
+done

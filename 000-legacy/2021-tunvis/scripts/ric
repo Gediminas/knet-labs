@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+sudo iptables -F
+sudo iptables -F -t nat
+sudo iptables -F -t mangle

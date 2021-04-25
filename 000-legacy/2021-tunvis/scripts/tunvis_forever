@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+DIRNAME="${BASH_SOURCE%[/\\]*}"
+
+# trap ctrl_c INT
+# ctrl_c() {
+#     echo "tunvis_forever: Trapped CTRL-C"
+#     destroy
+#     exit
+# }
+
+PID=0
+killall tunvis > /dev/null 2>&1
+
+while true; do
+  "$DIRNAME"/../tunvis "$DIRNAME"/../dat/rules1.txt &
+  PID=$!
+  inotifywait "$DIRNAME"/../tunvis
+  kill -SIGTERM $PID
+  sleep 1
+done
