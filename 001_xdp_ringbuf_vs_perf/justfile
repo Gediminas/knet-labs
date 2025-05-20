@@ -1,0 +1,64 @@
+set shell := ["bash", "-ueo", "pipefail", "-c"]
+set quiet
+set ignore-comments
+
+LOG_LEVEL := "trace"
+CFG_SUDO_RUN := "target.'cfg(all())'.runner='sudo -E'"
+
+help:
+    @just --list
+
+build:
+    cargo build
+
+build-release:
+    cargo build --release
+
+build-forever:
+    cargo watch --clear -x build
+
+root:
+    sudo -Es
+
+run-forever *ARGS:
+    RUST_LOG='poc={{LOG_LEVEL}}' cargo watch --clear -x "run -- {{ARGS}}"
+
+run-forever-release *ARGS:
+    RUST_LOG='poc={{LOG_LEVEL}}' cargo watch --clear -x "run --release -- {{ARGS}}"
+
+lint-clippy:
+    cargo clippy
+
+lint-machete:
+    cargo machete
+
+traffic:
+    sudo hping3 --udp --data 123 127.0.0.1 -i u500000
+
+traffic-fast:
+    sudo hping3 --udp --data 123 127.0.0.1 --fast
+
+traffic-faster:
+    sudo hping3 --udp --data 123 127.0.0.1 --fast
+
+traffic-flood:
+    timeout 15 sudo hping3 --udp --data 123 127.0.0.1 --flood
+
+traffic-12345-fast:
+    sudo hping3 --udp --data 123 127.0.0.1 -c 12345 --fast
+
+traffic-12345-faster:
+    sudo hping3 --udp --data 123 127.0.0.1 -c 12345 --faster
+
+install:
+    pipenv install pytest
+    # pipenv install pytest-benchmark
+
+bench:
+    RUST_LOG='poc=INFO' APP_PATH="./target/release/poc" APP_DURATION=1000 pipenv run pytest -s -vvv
+
+bench-3s:
+    RUST_LOG='poc=INFO' APP_PATH="./target/release/poc" APP_DURATION=3000 pipenv run pytest -s -vvv
+
+bench-30s:
+    RUST_LOG='poc=INFO' APP_PATH="./target/release/poc" APP_DURATION=30000 pipenv run pytest -s -vvv

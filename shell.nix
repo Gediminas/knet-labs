@@ -10,6 +10,14 @@ with nixpkgs; mkShell {
     # llvmPackages_19.clang
     just
 
+    # python3
+    pipenv
+
+    # Requirements for `cargo install cargo-generate`
+    gcc
+    openssl
+    pkg-config
+
     # other tools
     bpftools
     xdp-tools
@@ -28,6 +36,7 @@ with nixpkgs; mkShell {
     echo -n ">>>>> "; cargo +nightly --version
     echo -n ">>>>> "; rust-analyzer --version
     echo -n ">>>>> "; bpf-linker --version
+    echo -n ">>>>> "; python --version
     echo ""
   '';
 }
