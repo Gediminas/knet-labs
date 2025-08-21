@@ -1,10 +1,10 @@
 [package]
-name = "poc-ebpf"
+name = "poc-bpf"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-poc-common = { path = "../poc-common" }
+poc-common = { path = "../common" }
 
 aya-ebpf = { workspace = true }
 aya-log-ebpf = { workspace = true }

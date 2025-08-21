@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "poc",
-    "poc-common",
-    "poc-ebpf",
+    "app",
+    "bpf",
+    "common",
 ]
-default-members = ["poc", "poc-common"]
+default-members = ["app", "common"]
 
 [workspace.package]
 license = "MIT OR Apache-2.0"
@@ -29,6 +29,6 @@ network-types = { version = "0.0.7", default-features = false }
 tokio = { version = "1.40.0", default-features = false }
 which = { version = "6.0.0", default-features = false }
 
-[profile.release.package.poc-ebpf]
+[profile.release.package.poc-bpf]
 debug = 2
 codegen-units = 1

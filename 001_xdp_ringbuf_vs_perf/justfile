@@ -23,6 +23,9 @@ root:
 run-forever *ARGS:
     RUST_LOG='poc={{LOG_LEVEL}}' cargo watch --clear -x "run -- {{ARGS}}"
 
+run *ARGS:
+    RUST_LOG='poc={{LOG_LEVEL}}' cargo run -- {{ARGS}}
+
 run-forever-release *ARGS:
     RUST_LOG='poc={{LOG_LEVEL}}' cargo watch --clear -x "run --release -- {{ARGS}}"
 

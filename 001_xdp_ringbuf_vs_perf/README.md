@@ -14,11 +14,16 @@ Benchmark of **ringbuf vs perf** for sending packets from **XDP** to userspace, 
 ## Install and run
 
 ```sh
-# Ubuntu:
+# Prep on Ubuntu:
 pip install --user pipenv
-# NixOS:
+# Prep on NixOS:
 direnv enable
 
+# Check if all good
+just build
+just run --iface lo
+
+# Run tests
 just install
 just build-release
 just root
