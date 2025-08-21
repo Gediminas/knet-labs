@@ -1,5 +1,6 @@
 use core::mem;
 
+#[allow(dead_code)]
 #[inline(always)]
 pub(crate) unsafe fn read<T>(offset: usize, end: usize) -> Result<T, &'static str> {
     if offset + mem::size_of::<T>() > end {

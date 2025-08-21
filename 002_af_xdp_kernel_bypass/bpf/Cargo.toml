@@ -1,0 +1,21 @@
+[package]
+name = "poc-bpf"
+version = "0.1.0"
+authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+edition = "2021"
+
+[dependencies]
+poc-common = { path = "../common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+network-types = { workspace = true, default-features = false }
+
+aya-ebpf-bindings = "0.1.1"
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "poc"
+path = "src/main.rs"

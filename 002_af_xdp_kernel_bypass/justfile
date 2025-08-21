@@ -1,0 +1,69 @@
+set shell := ["bash", "-ueo", "pipefail", "-c"]
+# set quiet
+set ignore-comments
+
+DEBUG_LOG_LEVEL := "debug"
+RELEASE_LOG_LEVEL := "info"
+CFG_SUDO_RUN := "target.'cfg(all())'.runner='sudo -E'"
+
+help:
+    @just --list
+
+build:
+    cargo build
+
+build-release:
+    cargo build --release
+
+build-forever:
+    cargo watch --clear -x build
+
+root:
+    sudo -Es
+
+
+run *ARGS:
+    RUST_LOG='poc={{DEBUG_LOG_LEVEL}}' cargo run -- {{ARGS}}
+
+run-trace *ARGS:
+    RUST_LOG='poc=trace' cargo run -- {{ARGS}}
+
+run-forever *ARGS:
+    RUST_LOG='poc={{DEBUG_LOG_LEVEL}}' cargo watch --clear -x "run -- {{ARGS}}"
+
+run-dev *ARGS:
+    just run-forever --iface lo --timeout 3000
+
+run-dev-trace *ARGS:
+    RUST_LOG='poc=trace' cargo watch --clear -x "run -- --iface lo --timeout 3000 {{ARGS}}"
+
+run-release *ARGS:
+    RUST_LOG='poc={{RELEASE_LOG_LEVEL}}' cargo run --release -- {{ARGS}}
+
+run-release-forever *ARGS:
+    RUST_LOG='poc={{RELEASE_LOG_LEVEL}}' cargo watch --clear -x "run --release -- {{ARGS}}"
+
+lint-clippy:
+    cargo clippy
+
+lint-machete:
+    cargo machete
+
+traffic *ARGS:
+    sudo hping3 --udp --data 123 127.0.0.1 --destport 12345 {{ARGS}} || true
+
+traffic-fast:
+    just traffic --fast
+
+traffic-faster:
+    just traffic --faster
+
+traffic-flood:
+    echo "Flooding for 15 sec"
+    timeout 15 just traffic --flood
+
+traffic-12345:
+    just traffic -c 12345 --faster
+
+traffic-12345-flood:
+    just traffic -c 12345 --interval u1

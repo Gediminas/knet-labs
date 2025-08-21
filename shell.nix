@@ -27,6 +27,11 @@ with nixpkgs; mkShell {
   shellHook = ''
     unset TMPDIR || set -e TMPDIR || true
 
+    # rustup default stable
+    # rustup target add x86_64-unknown-linux-musl
+    # rustup toolchain install nightly --component rust-src
+    # rustup component add rust-analyzer
+
     echo ""
     echo    ">>>>> rust_ebpf_playground:"
     echo    ">>>>>"

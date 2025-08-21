@@ -1,4 +1,8 @@
+unstable_features = true
+newline_style = "Unix"
+
 group_imports = "StdExternalCrate"
 imports_granularity = "Crate"
 reorder_imports = true
-unstable_features = true
+
+#max_width = 100 #default 100

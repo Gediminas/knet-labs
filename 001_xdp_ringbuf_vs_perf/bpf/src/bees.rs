@@ -2,8 +2,6 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-mod bpf_utils;
-
 use core::{mem, ptr};
 
 use aya_ebpf::{
