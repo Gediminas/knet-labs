@@ -1,16 +1,15 @@
 [package]
 name = "poc-bpf"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 [dependencies]
 poc-common = { path = "../common" }
 
 aya-ebpf = { workspace = true }
+aya-ebpf-bindings = { workspace = true }
 aya-log-ebpf = { workspace = true }
-network-types = { workspace = true, default-features = false }
-
-aya-ebpf-bindings = "0.1.1"
+network-types = { workspace = true }
 
 [build-dependencies]
 which = { workspace = true }

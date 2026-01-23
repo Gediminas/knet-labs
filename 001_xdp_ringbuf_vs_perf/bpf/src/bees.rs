@@ -6,8 +6,8 @@ use core::{mem, ptr};
 
 use aya_ebpf::{
     bindings::{
-        xdp_action::XDP_PASS, BPF_F_CURRENT_CPU, BPF_F_RDONLY, BPF_F_RDONLY_PROG, BPF_F_WRONLY,
-        BPF_F_WRONLY_PROG, BPF_RB_FORCE_WAKEUP, BPF_RB_NO_WAKEUP,
+        BPF_F_CURRENT_CPU, BPF_F_RDONLY, BPF_F_RDONLY_PROG, BPF_F_WRONLY, BPF_F_WRONLY_PROG,
+        BPF_RB_FORCE_WAKEUP, BPF_RB_NO_WAKEUP, xdp_action::XDP_PASS,
     },
     macros::{map, xdp},
     maps::{PerCpuArray, PerfEventArray, RingBuf},
@@ -16,7 +16,7 @@ use aya_ebpf::{
 use aya_ebpf_bindings::helpers;
 use aya_log_ebpf::{error, info, trace};
 use network_types::eth::{EthHdr, EtherType};
-use poc_common::{PerfEvent, RingEvent, Stat, MAX_MTU};
+use poc_common::{MAX_MTU, PerfEvent, RingEvent, Stat};
 
 const SEND_NOT: u8 = 0;
 const SEND_VIA_PERF: u8 = 1;
@@ -90,7 +90,7 @@ fn process<const MODE: u8>(ctx: &XdpContext) -> u32 {
                     (*evt_ptr).time = time;
                     (*evt_ptr).len = len;
 
-                    if helpers::bpf_xdp_load_bytes(ctx.ctx, 0, buf_ptr as _, len as u32) == 0 {
+                    if helpers::bpf_xdp_load_bytes(ctx.ctx as _, 0, buf_ptr as _, len as u32) == 0 {
                         // event.submit(0)
                         event.submit(BPF_RB_FORCE_WAKEUP as u64)
                     } else {

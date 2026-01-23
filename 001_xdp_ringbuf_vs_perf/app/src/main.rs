@@ -7,16 +7,17 @@ mod utils;
 
 use anyhow::Context as _;
 use aya::{
-    maps::{perf::AsyncPerfEventArray, MapData, PerCpuArray, RingBuf},
+    Ebpf, include_bytes_aligned,
+    maps::{MapData, PerCpuArray, PerfEventArray, RingBuf},
     programs::{Xdp, XdpFlags},
     util::online_cpus,
-    Ebpf,
 };
+use aya_log::EbpfLogger;
 use bytes::BytesMut;
 use clap::Parser;
 use core::slice;
 use log::{debug, error, info, warn};
-use mio::{unix::SourceFd, Events, Interest, Poll, Token};
+use mio::{Events, Interest, Poll, Token, unix::SourceFd};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
@@ -30,12 +31,13 @@ use std::{
     os::fd::AsRawFd,
     ptr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
         Arc, LazyLock,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
     },
     time::Duration,
 };
 use tokio::{
+    io::unix::AsyncFd,
     signal,
     time::{self},
 };
@@ -90,27 +92,11 @@ async fn main() -> anyhow::Result<()> {
     let stat: PerCpuArray<MapData, Stat> =
         PerCpuArray::try_from(ebpf.take_map("STAT").expect("STAT-1")).expect("STAT-2");
 
-    // Moved here out of timer scope
-    let ring = RingBuf::try_from(ebpf.take_map("RING").expect("RING")).expect("RING-2");
-
-    // Moved here out of timer scope
-    let (poll, events) = {
-        let fd = ring.as_raw_fd();
-        let mut source = SourceFd(&fd);
-        let poll = Poll::new().expect("E203");
-        let events = Events::with_capacity(8);
-
-        poll.registry()
-            .register(&mut source, Token(0), Interest::READABLE)
-            .expect("E208");
-        (poll, events)
-    };
-
     let start_time = utils::now_ns();
     let start_cpu_time = utils::cpu_time_ms();
 
     if args.ring {
-        spawn_ringbuf_loop(&mut ebpf, args.ring_delay, &stat, ring, poll, events)?;
+        spawn_ringbuf_loop(&mut ebpf, args.ring_delay, &stat)?;
     } else if args.perf {
         spawn_perf_loop(&mut ebpf)?;
     } else {
@@ -168,30 +154,32 @@ fn spawn_ringbuf_loop(
     ebpf: &mut Ebpf,
     ring_delay: Option<u32>,
     stat: &PerCpuArray<MapData, Stat>,
-    mut ring: RingBuf<MapData>,
-    mut poll: Poll,
-    mut events: Events,
 ) -> anyhow::Result<()> {
-    std::thread::spawn(move || match ring_delay {
-        Some(delay) => {
-            warn!("RING: Userspace loop delay: {delay}");
+    let mut ring = RingBuf::try_from(ebpf.take_map("RING").expect("RING")).expect("RING-2");
+    let fd = AsyncFd::new(ring.as_raw_fd())?;
 
-            while !EXIT_FLAG.load(Relaxed) {
-                process_packet_burst(&mut ring);
+    tokio::task::spawn(async move {
+        match ring_delay {
+            Some(delay) => {
+                warn!("RING: Userspace loop delay: {delay}");
 
-                if delay > 0 {
-                    std::thread::sleep(Duration::from_micros(delay as u64));
+                while !EXIT_FLAG.load(Relaxed) {
+                    process_packet_burst(&mut ring);
+
+                    if delay > 0 {
+                        std::thread::sleep(Duration::from_micros(delay as u64));
+                    }
                 }
             }
-        }
-        None => {
-            warn!("RING: Userspace loop with epoll");
+            None => {
+                warn!("RING: Userspace loop with epoll");
 
-            while !EXIT_FLAG.load(Relaxed) {
-                process_packet_burst(&mut ring);
+                while !EXIT_FLAG.load(Relaxed) {
+                    process_packet_burst(&mut ring);
 
-                poll.poll(&mut events, Some(Duration::from_millis(100)))
-                    .expect("E213");
+                    let mut guard = fd.readable().await.expect("E7279");
+                    guard.clear_ready();
+                }
             }
         }
     });
@@ -210,10 +198,11 @@ fn spawn_perf_loop(ebpf: &mut Ebpf) -> anyhow::Result<()> {
     warn!("PERF: Userspace listeners: {num_cpus} (CPUs)");
 
     let mut events =
-        AsyncPerfEventArray::try_from(ebpf.take_map("PERF").expect("PERF")).expect("PERF-2");
+        PerfEventArray::try_from(ebpf.take_map("PERF").expect("PERF")).expect("PERF-2");
 
     for cpu in cpus {
         let mut buf = events.open(cpu, None)?;
+        let fd = AsyncFd::new(buf.as_raw_fd())?;
 
         let recv = RECV_PACKETS.clone();
         let lost = LOST_PACKETS.clone();
@@ -223,8 +212,10 @@ fn spawn_perf_loop(ebpf: &mut Ebpf) -> anyhow::Result<()> {
                 .map(|_| BytesMut::with_capacity(PERF_BUF_SIZE))
                 .collect::<Vec<_>>();
 
-            loop {
-                let events = buf.read_events(&mut buffers).await.expect("E7732");
+            while !EXIT_FLAG.load(Relaxed) {
+                let mut guard = fd.readable().await.expect("E7229");
+
+                let events = buf.read_events(&mut buffers).expect("E7732");
                 lost.fetch_add(events.lost, Relaxed);
                 recv.fetch_add(events.read, Relaxed);
 
@@ -261,6 +252,7 @@ fn spawn_perf_loop(ebpf: &mut Ebpf) -> anyhow::Result<()> {
                     let lat = latency / 1000;
                     debug!("APP: {lat:3} us / {saddr:?}:{sport} -> {daddr:?}:{dport} / {len} b");
                 }
+                guard.clear_ready();
             }
         });
     }
@@ -280,13 +272,24 @@ fn init_bpf(iface: &str, bee: &str) -> anyhow::Result<Ebpf> {
         debug!("remove limit on locked memory failed, ret is: {ret}");
     }
 
-    let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
-        env!("OUT_DIR"),
-        "/poc"
-    )))?;
-    if let Err(e) = aya_log::EbpfLogger::init(&mut ebpf) {
-        // This can happen if you remove all log statements from your eBPF program.
-        warn!("failed to initialize eBPF logger: {e}");
+    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+
+    match aya_log::EbpfLogger::init(&mut ebpf) {
+        Err(e) => {
+            // This can happen if you remove all log statements from your eBPF program.
+            warn!("failed to initialize eBPF logger: {e}");
+        }
+        Ok(logger) => {
+            let mut logger =
+                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
+            tokio::task::spawn(async move {
+                loop {
+                    let mut guard = logger.readable_mut().await.unwrap();
+                    guard.get_inner_mut().flush();
+                    guard.clear_ready();
+                }
+            });
+        }
     }
 
     let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
