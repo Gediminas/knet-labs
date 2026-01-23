@@ -14,22 +14,25 @@ Benchmark of **ringbuf vs perf** for sending packets from **XDP** to userspace, 
 ## Install and run
 
 ```sh
-# Prep on Ubuntu:
+################################
+# Prep option 1: nix+direnv
+direnv allow
+# Prep option 2: nix
+nix develop
+# Prep option 3: pip
 pip install --user pipenv
-# Prep on NixOS:
-direnv enable
+pipenv install pytest
+################################
 
 # Check if all good
 just build
 just run --iface lo
 
 # Run tests
-just install
 just build-release
-just root
-just bench      # 5*hping3 flood for 1s
-just bench-3s   # 5*hping3 flood for 3s
-just bench-30s  # 5*hping3 flood for 30s
+just bench        # 5*hping3 flood for 1s
+just bench 3000   # 5*hping3 flood for 3s
+just bench 30000  # 5*hping3 flood for 30s
 POC_HPING_TRAFFIC="--faster" just bench-30s  # 1 instance of `hping3 ... --faster`
 ```
 
