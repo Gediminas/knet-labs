@@ -11,7 +11,7 @@ Benchmark of **ringbuf vs perf** for sending packets from **XDP** to userspace, 
 - [Conclusion](#conclusion)
 - [Links](#links)
 
-## Install and run
+## Install and Run
 
 ```sh
 ################################
@@ -24,9 +24,13 @@ pip install --user pipenv
 pipenv install pytest
 ################################
 
-# Check if all good
+# Build
 just build
-just run --iface lo
+
+# Check if all good
+just run --iface lo  # terminal-1
+just traffic         # terminal-2
+                     # Ctrl+C in both terminals
 
 # Run tests
 just build-release
@@ -38,8 +42,8 @@ POC_HPING_TRAFFIC="--faster" just bench-30s  # 1 instance of `hping3 ... --faste
 
 ## Benchmark Ringbuf vs Perf
 
-(`just bench-30s`: UDP Flood via 5 × `hping3` for 30s each test @ `lo` interface;
- `packet_capture_time: u64`, `packet_len: usize` and 165 packet are sent)
+(`just bench-30s`: UDP flood via 5 × `hping3` for 30s per test on the `lo` interface; each event includes `packet_capture_time: u64`, `packet_len: usize`, and a 165-byte packet)
+
 
 | Mode    | Sleep | Latency | Thrghpt | Lost   | CPU BPF | CPU Usr | CPU sys+user Time |
 |---------|-------|---------|---------|--------|---------|---------|-------------------|
@@ -65,48 +69,51 @@ POC_HPING_TRAFFIC="--faster" just bench-30s  # 1 instance of `hping3 ... --faste
 
 **Under low load (1x `hping --fast`):**
 
-- CPU usage minimal in all modes except busy-loop (`ring-delay=0`), which consumes full CPU core as expected.
+- CPU usage is minimal in all modes except the busy-loop (`ring-delay=0`), which consumes a full CPU core
+
 
 **Under sustained high load (5x `hping --flood`):**
 
 - **Perf**
-  - ❌ Drops packets under sustained load (~0.21% loss)
-  - ✅ Lowest average latency (~7 µs)
-  - ❌ Very high CPU usage (≈ 58% BPF + 135% userspace => **~2 cores total**)
-  - ⚠️ Requires per-CPU listeners, complicating implementation and scaling
+  - Packet loss under sustained load (~0.21% loss)
+  - Lowest average latency during testing (~7 µs)
+  - Very high CPU usage (≈ 58% BPF + 135% userspace -> **~2 cores total**)
+  - Requires per-CPU consumers, increasing implementation complexity and reducing scalability
 - **Ringbuf with epoll (with BPF_RB_FORCE_WAKEUP submit flag)**
-  - ✅ Zero packet loss
-  - ✅ Latency close to perf (~12 µs)
-  - ⚠️ High CPU usage (≈ 53% BPF + 51% userspace => **~1 core total (2x less than perf)**)
-  - ✅ Single-threaded consumer => much simpler to implement and reason about
-  - ⚠️ Requires epoll-style event loop (minor complexity)
+  - No packet loss
+  - Latency close to perf (~12 µs)
+  - High but significantly lower CPU utilization compared to perf (≈ 53% BPF + 51% userspace -> **~1 core total (2x less than perf)**)
+  - Single-threaded consumer model, substantially simplifying implementation and reasoning
+  - Requires an epoll-based event loop, introducing minor additional complexity
 - **Ringbuf with busy-loop**
-  - ✅ Zero packet loss
-  - ✅ Latency close to perf (~10 µs)
-  - ❌ Very high CPU usage (≈ 41% BPF + 100% userspace => **~1.4 cores**)
-  - ⚠️ Only viable when absolute minimal delay is critical, and CPU cost is acceptable
+  - No packet loss
+  - Latency comparable to perf (~10 µs)
+  - Very high CPU utilization (≈ 41% BPF + 100% userspace -> **~1.4 cores**)
+  - Practical only when minimal latency is the primary objective and CPU cost is acceptable
 - **Ringbuf with sleep delays (10-500 µs)**
-  - ✅ Zero packet loss
-  - ⚠️ Latency increases with delay (40–320 µs)
-    -  50–100 µs delay gives best throughput vs CPU tradeoff
-  - ⚠️ Lower userspace CPU usage (but the combined usage still relatively high)
-  - ✅ Simple implementation — just `sleep`
+  - No packet loss
+  - Latency increases proportionally with sleep duration (approximately 40–320 µs)
+  - A sleep interval of **50–100 µs** provides the best throughput-to-CPU tradeoff in these tests
+  - Reduced userspace CPU utilization, though combined CPU usage still relatively high
+  - Simple implementation based on periodic sleep
 
-**ringbuf** achieved **zero packet loss** across all test cases. While extremely rare drops may still occur if the ring becomes full, this is **controlled by `bpf_ringbuf_reserve()`**, allowing the program to detect exhaustion and retry — a level of control not possible with `perf_event_output()`.
+Across all evaluated configurations, **ringbuf exhibited zero packet loss**.
+If the ring buffer becomes full, this condition is explicitly **detectable** via `bpf_ringbuf_reserve()`, enabling the program to apply **backpressure or retry logic**. This level of control is not available with `perf_event_output()`.
 
 
 ## Theory Notes
 
-- **perf** uses one ring buffer **per CPU**, leading to higher memory usage and coordination overhead.
-- **ringbuf** uses a single shared ring (configurable size), providing better resilience under bursty load.
+- **perf** uses one ring buffer per CPU, resulting in higher memory usage and additional coordination overhead.
+- **ringbuf** uses a single shared ring buffer (with configurable size) and atomic reservation, allowing producers to safely coordinate under concurrent load and improving behavior under bursty traffic.
 
 
 ## Conclusion
 
-- ✅ **Ringbuf with epoll** — best all-around: low latency, zero packet loss, reasonable CPU usage, and simple single-threaded code
-- ✅ **Ringbuf with delay 50–100 µs** — best latency vs CPU tradeoff; ideal for moderate to high traffic
-- ❌ **Ringbuf with busy-loop** — lowest latency (equal to perf), but burns a full CPU core; only viable when latency is everything
-- ❌ **Perf** — ultra-low latency, but drops packets and consumes excessive CPU; only use when latency is absolutely critical and packet loss + multithreaded complexity are acceptable
+- **Ringbuf with epoll** is the best overall option, offering low latency, zero packet loss, reasonable CPU usage, and a simple single-threaded consumer model
+- **Ringbuf with a 50–100 µs delay** provides the best latency-to-CPU tradeoff and is well suited for moderate to high traffic workloads
+- **Ringbuf with busy-loop polling** achieves the lowest latency (comparable to perf) but consumes a full CPU core; it is only appropriate when latency is the overriding constraint
+- **perf** delivers ultra-low latency but incurs packet loss under sustained load and excessive CPU usage; it should only be considered when minimal latency outweighs packet loss and implementation complexity
+
 
 ## Links
 
