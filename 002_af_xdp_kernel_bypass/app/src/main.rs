@@ -1,6 +1,6 @@
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(dead_code)]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
+// #![allow(dead_code)]
 
 mod bpf_helper;
 mod cli;
@@ -10,32 +10,17 @@ mod utils;
 use anyhow::{Context as _, Result};
 use aya::{
     Ebpf, include_bytes_aligned,
-    maps::{MapData, PerCpuArray, PerCpuValues, RingBuf, XskMap},
+    maps::{MapData, PerCpuArray, PerCpuValues, XskMap},
     programs::{Xdp, XdpFlags},
-    util::online_cpus,
 };
-use aya_log::EbpfLogger;
-use clap::Parser;
-use core::slice;
 use log::{debug, error, info, trace, warn};
-use network_types::{
-    eth::{EthHdr, EtherType},
-    ip::{IpProto, Ipv4Hdr},
-    tcp::TcpHdr,
-    udp::UdpHdr,
-};
+use network_types::{eth::EthHdr, ip::Ipv4Hdr, udp::UdpHdr};
 use poc_common::Stat;
-use std::{mem::MaybeUninit, net::Ipv4Addr};
-use std::{
-    mem::{self, offset_of},
-    os::fd::AsRawFd,
-    ptr,
-    sync::{
-        Arc, LazyLock,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
-    },
-    time::Duration,
+use std::sync::{
+    Arc, LazyLock,
+    atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed},
 };
+use std::{mem::MaybeUninit, net::Ipv4Addr};
 use tokio::{
     signal,
     time::{self},
@@ -147,7 +132,7 @@ fn run_redir(iface: &str, mut xsks: XskMap<MapData>) -> Result<()> {
 
             // Swap port (checksums?)
             {
-                let ptr2 = ptr as usize as *mut u8;
+                let _ptr2 = ptr as usize as *mut u8;
                 let ip4_ptr = ptr.wrapping_add(EthHdr::LEN);
                 let udp_ptr = ip4_ptr.wrapping_add(Ipv4Hdr::LEN) as *mut u8;
 
@@ -193,7 +178,7 @@ fn run_redir(iface: &str, mut xsks: XskMap<MapData>) -> Result<()> {
         // 5. Process completions and recycle buffers
         {
             let mut tx_complete = dev.complete(RX_QUEUE_SIZE);
-            while let Some(tx_desc) = tx_complete.read() {
+            while let Some(_tx_desc) = tx_complete.read() {
                 counter += 1;
             }
             tx_complete.release();
@@ -251,7 +236,7 @@ fn init_bpf(iface: &str, bee: &str) -> Result<Ebpf> {
     Ok(ebpf)
 }
 
-fn print_report(args: &cli::Opt, stat: PerCpuValues<Stat>) {
+fn print_report(_args: &cli::Opt, stat: PerCpuValues<Stat>) {
     let total_packets = stat.iter().fold(0, |acc, x| acc + x.total_packets);
     let redir_packets = stat.iter().fold(0, |acc, x| acc + x.redir_packets);
     let redir_failed_packets = stat.iter().fold(0, |acc, x| acc + x.redir_failed_packets);
@@ -266,23 +251,25 @@ fn print_report(args: &cli::Opt, stat: PerCpuValues<Stat>) {
     info!("************");
 }
 
+#[allow(dead_code)]
 #[inline(always)]
 unsafe fn read_unchecked<T>(pos: usize) -> T {
     let ptr = pos as *const T;
     unsafe { ptr.read_unaligned() }
 }
 
+#[allow(dead_code)]
 fn print_packet(ptr: *const u8, desc: &XdpDesc) {
     let ip4_ptr = ptr as usize + EthHdr::LEN;
     let udp_ptr = ip4_ptr + Ipv4Hdr::LEN;
-    let wg_ptr = udp_ptr + UdpHdr::LEN;
+    let _wg_ptr = udp_ptr + UdpHdr::LEN;
     let ip4: Ipv4Hdr = unsafe { read_unchecked(ip4_ptr) };
     let udp: UdpHdr = unsafe { read_unchecked(udp_ptr) };
 
     let saddr: Ipv4Addr = u32::to_be(ip4.src_addr).into();
     let daddr: Ipv4Addr = u32::to_be(ip4.dst_addr).into();
-    let sport: u16 = u16::to_be(udp.source).into();
-    let dport: u16 = u16::to_be(udp.dest).into();
+    let sport: u16 = u16::to_be(udp.source);
+    let dport: u16 = u16::to_be(udp.dest);
 
     // 51820
     trace!(
