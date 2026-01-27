@@ -2,7 +2,8 @@
 name = "poc-bpf"
 version = "0.1.0"
 authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
-edition = "2021"
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 poc-common = { path = "../common" }

@@ -8,23 +8,17 @@ PoC: Network packets redirection to AF_XDP to bypass kernel network stack; using
 [Requirements](../#Requirements)
 
 ```sh
-# Terminal-1
+# Build
 just build
-just root
-just run --iface lo
 
-# Terminal-2
-just traffic
+# Run
+just run --iface lo   # Terminal-1
+just traffic          # Terminal-2
 ```
 
 ## Dev
 
 ```sh
-# Terminal-1
-just build
-just root
-just run-dev         
-
-# Terminal-2
-just traffic
+just run-dev          # Terminal-1
+just traffic          # Terminal-2
 ```

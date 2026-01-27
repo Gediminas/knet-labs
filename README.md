@@ -9,3 +9,11 @@
 
 - [rustup](https://rustup.rs/)
 - [just](https://github.com/casey/just) (optional)
+
+```sh
+# Prep option 1: nix+direnv
+direnv allow
+
+# Prep option 2: nix
+nix develop
+```

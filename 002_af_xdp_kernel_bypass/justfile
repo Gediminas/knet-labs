@@ -2,9 +2,10 @@ set shell := ["bash", "-ueo", "pipefail", "-c"]
 # set quiet
 set ignore-comments
 
-DEBUG_LOG_LEVEL := "debug"
+DEBUG_LOG_LEVEL   := "debug"
 RELEASE_LOG_LEVEL := "info"
-CFG_SUDO_RUN := "target.'cfg(all())'.runner='sudo -E'"
+SUDO              := "/usr/bin/sudo -E env" # NOTE: Full path to sudo for `nix develop --ignore-environment`
+HPING             := `which hping3`
 
 help:
     @just --list
@@ -17,10 +18,6 @@ build-release:
 
 build-forever:
     cargo watch --clear -x build
-
-root:
-    sudo -Es
-
 
 run *ARGS:
     RUST_LOG='poc={{DEBUG_LOG_LEVEL}}' cargo run -- {{ARGS}}
@@ -50,7 +47,7 @@ lint-machete:
     cargo machete
 
 traffic *ARGS:
-    sudo hping3 --udp --data 123 127.0.0.1 --destport 12345 {{ARGS}} || true
+    {{SUDO}} {{HPING}} --udp --data 123 127.0.0.1 --destport 12345 {{ARGS}} || true
 
 traffic-fast:
     just traffic --fast
