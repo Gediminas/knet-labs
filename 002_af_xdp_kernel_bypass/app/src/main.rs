@@ -9,11 +9,10 @@ mod utils;
 
 use anyhow::{Context as _, Result};
 use aya::{
-    include_bytes_aligned,
-    maps::{perf::AsyncPerfEventArray, MapData, PerCpuArray, PerCpuValues, RingBuf, XskMap},
+    Ebpf, include_bytes_aligned,
+    maps::{MapData, PerCpuArray, PerCpuValues, RingBuf, XskMap},
     programs::{Xdp, XdpFlags},
     util::online_cpus,
-    Ebpf,
 };
 use aya_log::EbpfLogger;
 use clap::Parser;
@@ -32,8 +31,8 @@ use std::{
     os::fd::AsRawFd,
     ptr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
         Arc, LazyLock,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
     },
     time::Duration,
 };
@@ -42,7 +41,7 @@ use tokio::{
     time::{self},
 };
 use utils::{RX_QUEUE_SIZE, UMEM_SIZE};
-use xdpilone::{xdp::XdpDesc, Umem, UmemConfig};
+use xdpilone::{Umem, UmemConfig, xdp::XdpDesc};
 
 const QUEUE_ID: u32 = 0;
 
@@ -224,7 +223,23 @@ fn init_bpf(iface: &str, bee: &str) -> Result<Ebpf> {
 
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
 
-    EbpfLogger::init(&mut ebpf).context("Init eBPF logger")?; // This can happen if you remove all log statements from your eBPF program.
+    match aya_log::EbpfLogger::init(&mut ebpf) {
+        Err(e) => {
+            // This can happen if you remove all log statements from your eBPF program.
+            warn!("failed to initialize eBPF logger: {e}");
+        }
+        Ok(logger) => {
+            let mut logger =
+                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
+            tokio::task::spawn(async move {
+                loop {
+                    let mut guard = logger.readable_mut().await.unwrap();
+                    guard.get_inner_mut().flush();
+                    guard.clear_ready();
+                }
+            });
+        }
+    }
 
     let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
     program.load()?;
