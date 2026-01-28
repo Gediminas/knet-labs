@@ -3,7 +3,7 @@
 ## Labs
 
 - [001](./001-xdp-ringbuf-vs-perf): Benchmark: **Ringbuf vs Perf** — **XDP** packet delivery to userspace
-- [002](./002-xdp-dump): **XDP** packet capture with userspace delivery via **ringbuf**
+- [002](./002-xdp-ringbuf-dump): **XDP** packet capture with userspace delivery via **ringbuf**
 - [003](./003-af-xdp-kernel-bypass): **AF_XDP**–based Linux kernel bypass using [xdpilone](https://docs.rs/xdpilone)
 
 
