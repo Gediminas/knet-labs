@@ -1,9 +1,11 @@
-# Rust+eBPF Labs (Research / Benchmarks / Examples)
+# Rust + eBPF Labs
 
 ## Labs
 
-- [001](./001_xdp_ringbuf_vs_perf): Bench: **Ringbuf vs Perf** — **XDP** to user-space packet transfer
-- [002](./002_af_xdp_kernel_bypass): Linux kernel network bypass via **AF_XDP** using [xdpilone](https://docs.rs/xdpilone)
+- [001](./001-xdp-ringbuf-vs-perf): Benchmark: **Ringbuf vs Perf** — **XDP** packet delivery to userspace
+- [002](./002-xdp-dump): **XDP** packet capture with userspace delivery via **ringbuf**
+- [003](./003-af-xdp-kernel-bypass): **AF_XDP**–based Linux kernel bypass using [xdpilone](https://docs.rs/xdpilone)
+
 
 ## Requirements
 
@@ -11,7 +13,7 @@
 - [just](https://github.com/casey/just) (optional)
 
 ```sh
-# Prep option 1: nix+direnv
+# Prep option 1: nix + direnv
 direnv allow
 
 # Prep option 2: nix

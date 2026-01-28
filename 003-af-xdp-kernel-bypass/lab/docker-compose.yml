@@ -1,0 +1,60 @@
+services:
+  base:
+    image: ${COMPOSE_PROJECT_NAME}:base
+    build:
+      context: ..
+      dockerfile: lab/Dockerfile
+    profiles:
+      - base
+
+  server:
+    hostname: server
+    container_name: ${COMPOSE_PROJECT_NAME}-server
+    image: ${COMPOSE_PROJECT_NAME}:base
+    volumes:
+      - ..:/source
+    working_dir: /source
+    privileged: true
+    command: [ "sh", "-c", "wg-quick up wg0 && sleep infinity" ]
+    networks:
+      lan:
+        ipv4_address: 192.168.152.1
+
+  client:
+    hostname: client
+    container_name: ${COMPOSE_PROJECT_NAME}-client
+    image: ${COMPOSE_PROJECT_NAME}:base
+    volumes:
+      - ..:/source
+    working_dir: /source
+    privileged: true
+    command: [ "sh", "-c", "wg-quick up wg_client_01 && sleep infinity" ]
+    networks:
+      lan:
+        ipv4_address: 192.168.152.2
+
+  # Fix/enable later:
+  # 
+  # client2:
+  #   hostname: client2
+  #   container_name: ${COMPOSE_PROJECT_NAME}-client2
+  #   image: ${COMPOSE_PROJECT_NAME}:base
+  #   volumes:
+  #     - ..:/source
+  #   working_dir: /source
+  #   privileged: true
+  #   command: [ "sh", "-c", "wg-quick up wg_client2 && sleep infinity" ]
+  #   networks:
+  #     lan:
+  #       ipv4_address: 192.168.152.3
+
+networks:
+  lan:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+      - subnet: 192.168.152.0/24
+        gateway: 192.168.152.254
+    driver_opts:
+      com.docker.network.bridge.name: br-authbpf

@@ -1,6 +1,8 @@
-# PoC Ringbuf vs Perf
+# Benchmark: Ringbuf vs Perf
 
 Benchmark of **ringbuf vs perf** for sending packets from **XDP** to userspace, implemented in **Rust (Aya)**.
+
+[Requirements](../#Requirements)
 
 ## Table of Contents
 

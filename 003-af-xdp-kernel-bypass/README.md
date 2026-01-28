@@ -1,11 +1,10 @@
-# PoC AF_XDP Kernel Network Bypass
+# AF_XDP Kernel Network Bypass
 
-PoC: Network packets redirection to AF_XDP to bypass kernel network stack; using [xdpilone](https://docs.rs/xdpilone)
-
-
-## Build & Run
+Network packets redirection to AF_XDP to bypass kernel network stack; using [xdpilone](https://docs.rs/xdpilone)
 
 [Requirements](../#Requirements)
+
+## Build & Run
 
 ```sh
 # Build
