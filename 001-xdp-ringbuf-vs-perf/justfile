@@ -43,7 +43,7 @@ traffic-fast:
     {{SUDO}} {{HPING}} --udp --data 123 127.0.0.1 --fast
 
 traffic-faster:
-    {{SUDO}} {{HPING}} --udp --data 123 127.0.0.1 --fast
+    {{SUDO}} {{HPING}} --udp --data 123 127.0.0.1 --faster
 
 traffic-flood:
     timeout 15 {{SUDO}} {{HPING}} --udp --data 123 127.0.0.1 --flood

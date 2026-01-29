@@ -1,38 +1,34 @@
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(dead_code)]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
+// #![allow(dead_code)]
 
+mod bpf_helper;
+mod cli;
 mod logger;
 mod utils;
 
-use anyhow::Context as _;
+use crate::{cli::Opt, utils::init_with_single_xdp};
 use aya::{
-    Ebpf, include_bytes_aligned,
+    Ebpf,
     maps::{MapData, PerCpuArray, PerfEventArray, RingBuf},
-    programs::{Xdp, XdpFlags},
     util::online_cpus,
 };
-use aya_log::EbpfLogger;
 use bytes::BytesMut;
-use clap::Parser;
-use core::slice;
 use log::{debug, error, info, warn};
-use mio::{Events, Interest, Poll, Token, unix::SourceFd};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
-    tcp::TcpHdr,
     udp::UdpHdr,
 };
 use poc_common::{PerfEvent, RingEvent, Stat};
 use std::{
-    mem::{self, offset_of},
+    mem::{self},
     net::Ipv4Addr,
     os::fd::AsRawFd,
     ptr,
     sync::{
         Arc, LazyLock,
-        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed},
+        atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed},
     },
     time::Duration,
 };
@@ -51,43 +47,25 @@ static LOST_PACKETS: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(Atom
 static IDLE_CYCLES: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(AtomicUsize::new(0)));
 static LATENCY_SUM: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(AtomicUsize::new(0)));
 
-#[derive(Debug, Parser)]
-struct Args {
-    #[clap(short, long, default_value = None)]
-    pub timeout: Option<u64>,
-
-    #[clap(short, long, default_value = "eth0")]
-    iface: String,
-
-    #[clap(short, long, default_value = "false")]
-    perf: bool,
-
-    #[clap(short, long, default_value = "false")]
-    ring: bool,
-
-    #[clap(long, default_value = None)]
-    pub ring_delay: Option<u32>,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-
+    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
     logger::init();
+    let args = cli::parse();
 
-    let (mode, bee) = if args.ring {
+    let bee = if args.ring {
         if args.ring_delay.is_some() {
-            ("RING", "poc_ring_with_delay")
+            "poc_ring_with_delay"
         } else {
-            ("RING", "poc_ring_with_epoll")
+            "poc_ring_with_epoll"
         }
     } else if args.perf {
-        ("PERF", "poc_perf")
+        "poc_perf"
     } else {
-        ("NONE", "poc_none")
+        "poc_none"
     };
 
-    let mut ebpf = init_bpf(&args.iface, bee)?;
+    let mut ebpf = init_with_single_xdp(bee, &args.iface)?;
 
     let stat: PerCpuArray<MapData, Stat> =
         PerCpuArray::try_from(ebpf.take_map("STAT").expect("STAT-1")).expect("STAT-2");
@@ -260,48 +238,7 @@ fn spawn_perf_loop(ebpf: &mut Ebpf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_bpf(iface: &str, bee: &str) -> anyhow::Result<Ebpf> {
-    // Bump the memlock rlimit. This is needed for older kernels that don't use the
-    // new memcg based accounting, see https://lwn.net/Articles/837122/
-    let rlim = libc::rlimit {
-        rlim_cur: libc::RLIM_INFINITY,
-        rlim_max: libc::RLIM_INFINITY,
-    };
-    let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
-    if ret != 0 {
-        debug!("remove limit on locked memory failed, ret is: {ret}");
-    }
-
-    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
-
-    match aya_log::EbpfLogger::init(&mut ebpf) {
-        Err(e) => {
-            // This can happen if you remove all log statements from your eBPF program.
-            warn!("failed to initialize eBPF logger: {e}");
-        }
-        Ok(logger) => {
-            let mut logger =
-                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
-            tokio::task::spawn(async move {
-                loop {
-                    let mut guard = logger.readable_mut().await.unwrap();
-                    guard.get_inner_mut().flush();
-                    guard.clear_ready();
-                }
-            });
-        }
-    }
-
-    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
-    program.load()?;
-    program.attach(iface, XdpFlags::default())
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
-
-    debug!("eBPF loaded: {bee}");
-    Ok(ebpf)
-}
-
-fn print_report(args: &Args, total_packets: usize, elapsed: f64, sys_ms: f64, usr_ms: f64) {
+fn print_report(args: &Opt, total_packets: usize, elapsed: f64, sys_ms: f64, usr_ms: f64) {
     if !args.perf && !args.ring {
         RECV_PACKETS.store(total_packets, Relaxed);
     }

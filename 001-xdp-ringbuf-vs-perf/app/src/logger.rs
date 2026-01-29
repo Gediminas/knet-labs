@@ -7,7 +7,7 @@ pub fn init() {
         .filter_level(log::LevelFilter::Info)
         .parse_default_env()
         .format(|buf, record| {
-            let s1 = AnsiColor::Blue.on_default();
+            let _s1 = AnsiColor::Blue.on_default();
             let s2 = match record.level() {
                 Info => AnsiColor::White.on_default(),
                 Debug => AnsiColor::Green.on_default(),

@@ -84,18 +84,19 @@ fn process<const MODE: u8>(ctx: &XdpContext) -> u32 {
         SEND_VIA_RING_WITH_DELAY | SEND_VIA_RING_WITH_EPOLL => {
             if let Some(mut event) = RING.reserve::<RingEvent>(0) {
                 let evt_ptr = event.as_mut_ptr();
-                let buf_ptr = unsafe { (*evt_ptr).buf.as_mut_ptr() };
 
-                unsafe {
+                let res = unsafe {
                     (*evt_ptr).time = time;
                     (*evt_ptr).len = len;
 
-                    if helpers::bpf_xdp_load_bytes(ctx.ctx as _, 0, buf_ptr as _, len as u32) == 0 {
-                        // event.submit(0)
-                        event.submit(BPF_RB_FORCE_WAKEUP as u64)
-                    } else {
-                        event.discard(0)
-                    }
+                    let evt_buf = (*evt_ptr).buf.as_mut_ptr() as _;
+                    helpers::bpf_xdp_load_bytes(ctx.ctx, 0, evt_buf, len as u32)
+                };
+
+                if res == 0 {
+                    event.submit(BPF_RB_FORCE_WAKEUP as u64) // event.submit(0)
+                } else {
+                    event.discard(0)
                 }
             } else {
                 if let Some(stat) = STAT.get_ptr_mut(0) {

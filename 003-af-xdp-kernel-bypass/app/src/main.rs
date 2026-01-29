@@ -7,13 +7,10 @@ mod cli;
 mod logger;
 mod utils;
 
+use crate::utils::init_with_single_xdp;
 use anyhow::{Context as _, Result};
-use aya::{
-    Ebpf, include_bytes_aligned,
-    maps::{MapData, PerCpuArray, PerCpuValues, XskMap},
-    programs::{Xdp, XdpFlags},
-};
-use log::{debug, error, info, trace, warn};
+use aya::maps::{MapData, PerCpuArray, PerCpuValues, XskMap};
+use log::{debug, error, info, trace};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, udp::UdpHdr};
 use poc_common::Stat;
 use std::sync::{
@@ -41,10 +38,8 @@ struct PacketMap(MaybeUninit<[u8; UMEM_SIZE]>);
 #[tokio::main]
 async fn main() -> Result<()> {
     anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
-
-    let args = cli::parse();
-
     logger::init();
+    let args = cli::parse();
 
     println!("=======================");
     println!("app:        {}", BEE);
@@ -53,7 +48,7 @@ async fn main() -> Result<()> {
     println!("args:       {:?}", args);
     println!("=======================");
 
-    let mut ebpf = init_bpf(&args.iface, BEE)?;
+    let mut ebpf = init_with_single_xdp(BEE, &args.iface)?;
 
     let xsks = XskMap::try_from(ebpf.take_map("XSKS").context("XSKS")?).context("XSKS-2")?;
 
@@ -201,39 +196,6 @@ fn run_redir(iface: &str, mut xsks: XskMap<MapData>) -> Result<()> {
     info!("{:?}", dev.statistics_v2());
 
     Ok(())
-}
-
-fn init_bpf(iface: &str, bee: &str) -> Result<Ebpf> {
-    bpf_helper::legacy_memlock_rlimit_remove()?;
-
-    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
-
-    match aya_log::EbpfLogger::init(&mut ebpf) {
-        Err(e) => {
-            // This can happen if you remove all log statements from your eBPF program.
-            warn!("failed to initialize eBPF logger: {e}");
-        }
-        Ok(logger) => {
-            let mut logger =
-                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
-            tokio::task::spawn(async move {
-                loop {
-                    let mut guard = logger.readable_mut().await.unwrap();
-                    guard.get_inner_mut().flush();
-                    guard.clear_ready();
-                }
-            });
-        }
-    }
-
-    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
-    program.load()?;
-    program
-        .attach(iface, XdpFlags::default())
-        .context("failed to attach the XDP program")?;
-
-    debug!("eBPF loaded: {bee}");
-    Ok(ebpf)
 }
 
 fn print_report(_args: &cli::Opt, stat: PerCpuValues<Stat>) {
