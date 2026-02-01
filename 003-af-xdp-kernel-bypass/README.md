@@ -1,4 +1,4 @@
-# AF_XDP Kernel Network Bypass
+# AF_XDP Kernel Bypass
 
 Network packets redirection to AF_XDP to bypass kernel network stack; using [xdpilone](https://docs.rs/xdpilone)
 

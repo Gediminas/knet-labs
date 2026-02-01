@@ -8,15 +8,17 @@ members = [
 default-members = ["app", "common"]
 
 [workspace.package]
-license = "MIT OR Apache-2.0"
+description = "Bench Ringbuf vs Perf"
+version = "0.1.0"
 edition = "2024"
+authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 aya               = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-build         = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-ebpf          = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-ebpf-bindings = { git = "https://github.com/aya-rs/aya", default-features = false }
-aya-log           = { git = "https://github.com/aya-rs/aya", default-features = false }
 aya-log-ebpf      = { git = "https://github.com/aya-rs/aya", default-features = false }
 
 anyhow = { version = "1", default-features = false }
@@ -26,10 +28,12 @@ clap = { version = "4.5.20", default-features = false, features = ["std"] } # st
 env_logger = { version = "0.11.5", default-features = false }
 libc = { version = "0.2.159", default-features = false }
 log = { version = "0.4.22", default-features = false }
-mio = { version = "1.0.4", default-features = false }
 network-types = { version = "0.0.7", default-features = false }
 tokio = { version = "1.40.0", default-features = false }
-which = { version = "6.0.0", default-features = false }
+which = { version = "8.0.0", default-features = false }
+
+poc-common = { path = "./common", default-features = false }
+kit = { path = "../kit", default-features = false }
 
 [profile.release.package.poc-bpf]
 debug = 2

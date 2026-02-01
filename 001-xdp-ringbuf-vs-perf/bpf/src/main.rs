@@ -2,7 +2,6 @@
 #![no_main]
 
 mod bees;
-mod bpf_utils;
 
 #[cfg(not(test))]
 #[panic_handler]

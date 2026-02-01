@@ -2,15 +2,14 @@
 // #![allow(unused_variables)]
 // #![allow(dead_code)]
 
-mod bpf_helper;
 mod cli;
-mod logger;
-mod utils;
 
-use crate::{cli::Opt, utils::init_with_single_xdp};
+use crate::cli::Opt;
+use anyhow::Context as _;
 use aya::{
-    Ebpf,
+    Ebpf, include_bytes_aligned,
     maps::{MapData, PerCpuArray, PerfEventArray, RingBuf},
+    programs::{Xdp, XdpFlags},
     util::online_cpus,
 };
 use bytes::BytesMut;
@@ -50,7 +49,7 @@ static LATENCY_SUM: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(Atomi
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
-    logger::init();
+    kit::logger::init();
     let args = cli::parse();
 
     let bee = if args.ring {
@@ -70,8 +69,8 @@ async fn main() -> anyhow::Result<()> {
     let stat: PerCpuArray<MapData, Stat> =
         PerCpuArray::try_from(ebpf.take_map("STAT").expect("STAT-1")).expect("STAT-2");
 
-    let start_time = utils::now_ns();
-    let start_cpu_time = utils::cpu_time_ms();
+    let start_time = kit::system::now_ns();
+    let start_cpu_time = kit::system::cpu_time_ms();
 
     if args.ring {
         spawn_ringbuf_loop(&mut ebpf, args.ring_delay, &stat)?;
@@ -92,8 +91,8 @@ async fn main() -> anyhow::Result<()> {
 
     EXIT_FLAG.store(true, Relaxed);
 
-    let end_cpu_time = utils::cpu_time_ms();
-    let end_time = utils::now_ns();
+    let end_cpu_time = kit::system::cpu_time_ms();
+    let end_time = kit::system::now_ns();
 
     let elapsed = (end_time - start_time) as f64 / 1_000_000_000.0;
     let sys_ms = (end_cpu_time.0 - start_cpu_time.0) as f64 / 1_000.0 / elapsed;
@@ -112,7 +111,7 @@ fn process_packet_burst(ring: &mut RingBuf<MapData>) {
     while let Some(item) = ring.next() {
         let ptr = item.as_ptr();
         let evt = unsafe { ptr::read_unaligned(ptr as *const RingEvent) };
-        let now = utils::now_ns();
+        let now = kit::system::now_ns();
         let latency = now - evt.time;
 
         debug!("{:?}", &evt.buf[..evt.len]);
@@ -201,7 +200,7 @@ fn spawn_perf_loop(ebpf: &mut Ebpf) -> anyhow::Result<()> {
                     let data: PerfEvent =
                         unsafe { ptr::read_unaligned(rcv_buf.as_ptr() as *const PerfEvent) };
 
-                    let latency = utils::now_ns() - data.time;
+                    let latency = kit::system::now_ns() - data.time;
                     LATENCY_SUM.fetch_add(latency as usize, Relaxed);
 
                     let pos = mem::size_of::<PerfEvent>();
@@ -286,4 +285,20 @@ fn print_report(args: &Opt, total_packets: usize, elapsed: f64, sys_ms: f64, usr
     } else {
         error!("* CPU usr-time: {usr_ms:7.1} ms/s");
     }
+}
+
+fn init_with_single_xdp(bee: &str, iface: &str) -> anyhow::Result<Ebpf> {
+    kit::system::legacy_memlock_rlimit_remove()?;
+
+    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+
+    kit::init_aya_log(&mut ebpf).expect("init aya-log");
+
+    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
+    program.load()?;
+    program.attach(iface, XdpFlags::default())
+        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+
+    debug!("eBPF loaded: {bee}");
+    Ok(ebpf)
 }

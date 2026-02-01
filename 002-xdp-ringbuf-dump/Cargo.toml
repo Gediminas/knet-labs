@@ -8,7 +8,10 @@ members = [
 default-members = ["app", "common"]
 
 [workspace.package]
+description = "AF_XDP Linux kernel network bypass (PoC)"
+version = "0.1.0"
 edition = "2021"
+authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -28,7 +31,10 @@ log = { version = "0.4.29", default-features = false }
 network-types = { version = "0.0.7", default-features = false }
 pcap-file-tokio =  { version = "0.1.0", default-features = false }
 tokio = { version = "1.49.0", default-features = false }
-which = { version = "6.0.3", default-features = false }
+which = { version = "8.0.0", default-features = false }
+
+poc-common = { path = "./common", default-features = false }
+kit = { path = "../kit", default-features = false }
 
 [profile.release.package.poc-bpf]
 debug = 2

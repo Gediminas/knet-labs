@@ -43,6 +43,11 @@ pub fn poc_xdp_ring(ctx: XdpContext) -> u32 {
 
     unsafe { (*stat).total_packets += 1 };
 
+    // Verifier safer perhaps:
+    // if !aya_ebpf::check_bounds_signed(len as i64, 1, MAX_MTU as i64) {
+    //     return XDP_PASS;
+    // }
+
     let len = ctx.data_end() - ctx.data();
     let reservation_size = match len {
         ..LIMIT_INVALID => return XDP_PASS, // Verifier is happy with this!

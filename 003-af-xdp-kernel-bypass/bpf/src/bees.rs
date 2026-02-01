@@ -1,20 +1,17 @@
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(dead_code)]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
+// #![allow(dead_code)]
 
-use crate::bpf_utils::read_unchecked;
 use aya_ebpf::{
     bindings::{
-        xdp_action::{XDP_DROP, XDP_PASS, XDP_REDIRECT, XDP_TX},
-        BPF_F_RDONLY, BPF_F_WRONLY_PROG, BPF_RB_FORCE_WAKEUP, BPF_RB_NO_WAKEUP, TC_ACT_PIPE,
+        BPF_F_RDONLY,
+        xdp_action::{XDP_PASS, XDP_REDIRECT},
     },
-    macros::{classifier, map, xdp},
-    maps::{PerCpuArray, PerfEventArray, RingBuf, XskMap},
-    programs::{TcContext, XdpContext},
+    macros::{map, xdp},
+    maps::{PerCpuArray, XskMap},
+    programs::XdpContext,
 };
-use aya_ebpf_bindings::helpers;
-use aya_log_ebpf::{debug, error, info, trace, warn};
-use core::{mem, ptr};
+use aya_log_ebpf::{error, trace};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
@@ -70,20 +67,20 @@ pub fn should_redirect(ctx: &XdpContext) -> bool {
     }
 
     // FIXME EtherType is limited enum, which is UB when parsing packet, drop EthHdr (but works for now)
-    let eth: EthHdr = unsafe { read_unchecked(ctx.data()) };
+    let eth: EthHdr = unsafe { kit::read_unchecked(ctx.data()) };
     if let EtherType::Ipv4 = eth.ether_type {
     } else {
         return false;
     }
 
     let ip4_ptr = ctx.data() + EthHdr::LEN;
-    let ip4: Ipv4Hdr = unsafe { read_unchecked(ip4_ptr) };
+    let ip4: Ipv4Hdr = unsafe { kit::read_unchecked(ip4_ptr) };
     if ip4.proto != IpProto::Udp {
         return false;
     }
 
     let udp_ptr = ip4_ptr + Ipv4Hdr::LEN;
-    let udp: UdpHdr = unsafe { read_unchecked(udp_ptr) };
+    let udp: UdpHdr = unsafe { kit::read_unchecked(udp_ptr) };
     if udp.dest != WG_PORT {
         return false;
     }

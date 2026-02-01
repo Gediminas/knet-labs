@@ -11,9 +11,9 @@
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           # ─── Dev ───
-          rustup
-          bpf-linker
-          cargo-generate
+          # rustup
+          # bpf-linker
+          # cargo-generate
 
           # ─── Tools ───
           gnumake

@@ -2,9 +2,7 @@
 // #![allow(unused_variables)]
 // #![allow(dead_code)]
 
-mod bpf_helper;
 mod cli;
-mod logger;
 mod utils;
 
 use crate::utils::init_with_single_xdp;
@@ -38,7 +36,7 @@ struct PacketMap(MaybeUninit<[u8; UMEM_SIZE]>);
 #[tokio::main]
 async fn main() -> Result<()> {
     anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
-    logger::init();
+    kit::logger::init();
     let args = cli::parse();
 
     println!("=======================");

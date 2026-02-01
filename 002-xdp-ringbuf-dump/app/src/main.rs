@@ -4,7 +4,6 @@
 
 mod bpf_helper;
 mod cli;
-mod logger;
 mod utils;
 
 use crate::utils::init_with_single_xdp;
@@ -26,7 +25,7 @@ const BEE: &str = "poc_xdp_ring";
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
-    logger::init();
+    kit::logger::init();
     let args = cli::parse();
 
     let mut ebpf = init_with_single_xdp(BEE, &args.iface)?;

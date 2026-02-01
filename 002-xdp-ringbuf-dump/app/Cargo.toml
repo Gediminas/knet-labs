@@ -1,15 +1,13 @@
 [package]
 name = "poc"
-description = "AF_XDP Linux kernel network bypass (PoC)"
-version = "0.1.0"
-authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+description.workspace = true
+version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
 
 
 [dependencies]
-poc-common = { path = "../common", features = ["user"] }
-
 anyhow = { workspace = true }
 aya = { workspace = true }
 aya-log = { workspace = true }
@@ -19,6 +17,9 @@ log = { workspace = true }
 pcap-file-tokio = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "signal", "fs", "sync"] }
 clap = { workspace = true, features = ["derive"] }
+
+poc-common = { workspace = true, features = ["user"] }
+kit = { workspace = true, features = ["user"] }
 
 [build-dependencies]
 anyhow = { workspace = true }

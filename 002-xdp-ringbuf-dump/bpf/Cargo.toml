@@ -1,17 +1,18 @@
 [package]
 name = "poc-bpf"
-version = "0.1.0"
-authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+description.workspace = true
+version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
 
 [dependencies]
-poc-common = { path = "../common" }
-
 aya-ebpf = { workspace = true }
 aya-log-ebpf = { workspace = true }
 
 network-types = "0.0.7"
+
+poc-common = { workspace = true }
 
 [build-dependencies]
 which = { workspace = true }

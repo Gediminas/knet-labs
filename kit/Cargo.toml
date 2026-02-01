@@ -1,0 +1,39 @@
+[package]
+name = "kit"
+version = "0.1.0"
+authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[features]
+default = []
+kernel = ["libc"]
+user = [
+  "anyhow",
+  "aya",
+  "aya-log",
+  "clap",
+  "env_logger",
+  "libc",
+  "log",
+  "tokio",
+]
+
+[dependencies]
+aya               = { git = "https://github.com/aya-rs/aya", default-features = false, optional = true }
+aya-log           = { git = "https://github.com/aya-rs/aya", default-features = false, optional = true}
+# aya-build         = { git = "https://github.com/aya-rs/aya", default-features = false }
+# aya-ebpf          = { git = "https://github.com/aya-rs/aya", default-features = false }
+# aya-ebpf-bindings = { git = "https://github.com/aya-rs/aya", default-features = false }
+# aya-log-ebpf      = { git = "https://github.com/aya-rs/aya", default-features = false }
+
+# userspace
+anyhow = { version = "1", default-features = false, optional = true }
+clap = { version = "4.5.20", default-features = false, features = ["std"], optional = true } #FIXME: used for colors only
+env_logger = { version = "0.11.5", default-features = false, optional = true }
+libc = { version = "0.2.159", default-features = false, optional = true }
+log = { version = "0.4.22", default-features = false, optional = true }
+tokio = { version = "1.40.0", default-features = false, optional = true }
+
+[lib]
+path = "src/lib.rs"

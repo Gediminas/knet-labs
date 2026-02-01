@@ -1,23 +1,24 @@
 [package]
 name = "poc"
-version = "0.1.0"
+description.workspace = true
+version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
 
 [dependencies]
-poc-common = { path = "../common", features = ["user"] }
-
 anyhow = { workspace = true }
 aya = { workspace = true }
-aya-log = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-env_logger = { workspace = true, default-features = false, features = ["auto-color", "color", "humantime"] }
+env_logger = { workspace = true, features = ["auto-color", "color", "humantime"] }
 libc = { workspace = true }
 log = { workspace = true }
-mio = { workspace = true }
 network-types = { workspace = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "signal", "net"] }
+
+poc-common = { workspace = true, features = ["user"] }
+kit = { workspace = true, features = ["user"] }
 
 [build-dependencies]
 anyhow = { workspace = true }

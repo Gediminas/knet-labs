@@ -1,3 +1,5 @@
+extern crate std;
+
 use clap::builder::styling::AnsiColor;
 use log::Level::{Debug, Info, Trace};
 use std::io::Write;

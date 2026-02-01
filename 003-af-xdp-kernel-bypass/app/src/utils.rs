@@ -1,11 +1,9 @@
-use crate::bpf_helper;
 use anyhow::Context as _;
 use anyhow::Result;
 use aya::{
     Ebpf, include_bytes_aligned,
     programs::{Xdp, XdpFlags},
 };
-use libc::{CLOCK_MONOTONIC, RUSAGE_SELF, clock_gettime, getrusage, rusage, timespec};
 use log::info;
 use log::{debug, warn};
 use std::num::NonZeroU32;
@@ -18,30 +16,6 @@ const TX_QUEUE_SIZE: u32 = 8; // 1 << 14
 const PACKET_LEN: u32 = 4096; // Could be smaller but must be equal to alignment below, x86_64 requires 4KB+
 
 pub const UMEM_SIZE: usize = PACKET_RING_SIZE as usize * PACKET_LEN as usize;
-
-#[allow(dead_code)]
-pub fn now_ns() -> u64 {
-    let mut t: timespec = unsafe { std::mem::zeroed() };
-
-    if unsafe { clock_gettime(CLOCK_MONOTONIC, &mut t as *mut timespec) } != 0 {
-        panic!("clock_gettime failed");
-    }
-
-    (t.tv_sec as u64) * 1_000_000_000 + (t.tv_nsec as u64)
-}
-
-#[allow(dead_code)]
-pub fn cpu_time_ms() -> (u64, u64) {
-    let mut r: rusage = unsafe { std::mem::zeroed() };
-
-    if unsafe { getrusage(RUSAGE_SELF, &mut r) } != 0 {
-        panic!("clock_gettime failed");
-    }
-
-    let user = (r.ru_utime.tv_sec as u64) * 1_000_000 + (r.ru_utime.tv_usec as u64);
-    let sys = (r.ru_stime.tv_sec as u64) * 1_000_000 + (r.ru_stime.tv_usec as u64);
-    (user, sys)
-}
 
 pub fn bind_xsk_umem(iface: &str, queue: u32, umem: &Umem) -> (RingRx, RingTx, DeviceQueue) {
     info!("Creating XSK");
@@ -112,7 +86,7 @@ fn new_if_info(iface: &str, queue: u32) -> xdpilone::IfInfo {
 }
 
 pub fn init_with_single_xdp(bee: &str, iface: &str) -> anyhow::Result<Ebpf> {
-    bpf_helper::legacy_memlock_rlimit_remove()?;
+    kit::system::legacy_memlock_rlimit_remove()?;
 
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
 
