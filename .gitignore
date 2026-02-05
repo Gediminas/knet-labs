@@ -1,6 +1,7 @@
 .*
 **/*.rs.bk
 *.pdb
+*.pcap
 
 __pycache__/
 debug/
