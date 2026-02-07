@@ -1,21 +1,12 @@
-use anyhow::Context as _;
 use anyhow::Result;
-use aya::{
-    Ebpf, include_bytes_aligned,
-    programs::{Xdp, XdpFlags},
-};
 use log::info;
-use log::{debug, warn};
 use std::num::NonZeroU32;
 use xdpilone::{DeviceQueue, IfInfo, RingRx, RingTx, Socket, SocketConfig, Umem, User};
 
-const PACKET_RING_SIZE: u32 = 16 * 8;
+pub const PACKET_LEN: u32 = 4096; // Could be smaller but must be equal to alignment below, x86_64 requires 4KB+
+pub const PACKET_RING_SIZE: u32 = 16 * 8;
 pub const RX_QUEUE_SIZE: u32 = 8; // 1 << 14
 const TX_QUEUE_SIZE: u32 = 8; // 1 << 14
-
-const PACKET_LEN: u32 = 4096; // Could be smaller but must be equal to alignment below, x86_64 requires 4KB+
-
-pub const UMEM_SIZE: usize = PACKET_RING_SIZE as usize * PACKET_LEN as usize;
 
 pub fn bind_xsk_umem(iface: &str, queue: u32, umem: &Umem) -> (RingRx, RingTx, DeviceQueue) {
     info!("Creating XSK");
@@ -83,36 +74,4 @@ fn new_if_info(iface: &str, queue: u32) -> xdpilone::IfInfo {
     info.from_name(iface_cstr.as_c_str()).unwrap();
     info.set_queue(queue);
     info
-}
-
-pub fn init_with_single_xdp(bee: &str, iface: &str) -> anyhow::Result<Ebpf> {
-    kit::system::legacy_memlock_rlimit_remove()?;
-
-    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
-
-    match aya_log::EbpfLogger::init(&mut ebpf) {
-        Err(e) => {
-            // This can happen if you remove all log statements from your eBPF program.
-            warn!("failed to initialize eBPF logger: {e}");
-        }
-        Ok(logger) => {
-            let mut logger =
-                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
-            tokio::task::spawn(async move {
-                loop {
-                    let mut guard = logger.readable_mut().await.unwrap();
-                    guard.get_inner_mut().flush();
-                    guard.clear_ready();
-                }
-            });
-        }
-    }
-
-    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
-    program.load()?;
-    program.attach(iface, XdpFlags::default())
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
-
-    debug!("eBPF loaded: {bee}");
-    Ok(ebpf)
 }

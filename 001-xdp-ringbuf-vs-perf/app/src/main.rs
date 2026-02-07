@@ -5,7 +5,7 @@
 mod cli;
 
 use crate::cli::Opt;
-use anyhow::Context as _;
+use anyhow::{Context as _, Result};
 use aya::{
     Ebpf, include_bytes_aligned,
     maps::{MapData, PerCpuArray, PerfEventArray, RingBuf},
@@ -47,7 +47,7 @@ static IDLE_CYCLES: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(Atomi
 static LATENCY_SUM: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(AtomicUsize::new(0)));
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
     anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
     kit::logger::init();
     let args = cli::parse();
@@ -131,7 +131,7 @@ fn spawn_ringbuf_loop(
     ebpf: &mut Ebpf,
     ring_delay: Option<u32>,
     stat: &PerCpuArray<MapData, Stat>,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let mut ring = RingBuf::try_from(ebpf.take_map("RING").expect("RING")).expect("RING-2");
     let fd = AsyncFd::new(ring.as_raw_fd())?;
 
@@ -168,7 +168,7 @@ fn spawn_ringbuf_loop(
     Ok(())
 }
 
-fn spawn_perf_loop(ebpf: &mut Ebpf) -> anyhow::Result<()> {
+fn spawn_perf_loop(ebpf: &mut Ebpf) -> Result<()> {
     let cpus = online_cpus().expect("CPU");
     let num_cpus = cpus.len();
 
@@ -287,7 +287,7 @@ fn print_report(args: &Opt, total_packets: usize, elapsed: f64, sys_ms: f64, usr
     }
 }
 
-fn init_with_single_xdp(bee: &str, iface: &str) -> anyhow::Result<Ebpf> {
+fn init_with_single_xdp(bee: &str, iface: &str) -> Result<Ebpf> {
     kit::system::legacy_memlock_rlimit_remove()?;
 
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;

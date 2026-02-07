@@ -1,11 +1,11 @@
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 pub struct Opt {
     #[clap(short, long, default_value = "eth0")]
     pub iface: String,
 
-    #[arg(short, long, default_value = "dump.pcap")]
+    #[clap(short, long, default_value = "dump.pcap")]
     pub out: String,
 }
 

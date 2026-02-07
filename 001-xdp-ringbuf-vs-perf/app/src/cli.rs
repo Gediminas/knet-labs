@@ -1,6 +1,6 @@
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 pub struct Opt {
     #[clap(short, long, default_value = None)]
     pub timeout: Option<u64>,

@@ -5,10 +5,13 @@
 mod cli;
 mod utils;
 
-use crate::utils::init_with_single_xdp;
 use anyhow::{Context as _, Result};
 use aya::maps::{MapData, PerCpuArray, PerCpuValues, XskMap};
-use log::{debug, error, info, trace};
+use aya::{
+    Ebpf, include_bytes_aligned,
+    programs::{Xdp, XdpFlags},
+};
+use log::{debug, error, info, trace, warn};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, udp::UdpHdr};
 use poc_common::Stat;
 use std::sync::{
@@ -20,12 +23,14 @@ use tokio::{
     signal,
     time::{self},
 };
-use utils::{RX_QUEUE_SIZE, UMEM_SIZE};
+use utils::RX_QUEUE_SIZE;
 use xdpilone::{Umem, UmemConfig, xdp::XdpDesc};
 
 const QUEUE_ID: u32 = 0;
 
 const BEE: &str = "poc_redirect_to_afxdp";
+
+const UMEM_SIZE: usize = utils::PACKET_RING_SIZE as usize * utils::PACKET_LEN as usize;
 
 static SENT_PACKETS: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(AtomicUsize::new(0)));
 static EXIT_FLAG: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new(AtomicBool::new(false)));
@@ -40,7 +45,8 @@ async fn main() -> Result<()> {
     let args = cli::parse();
 
     println!("=======================");
-    println!("app:        {}", BEE);
+    println!("app:        {}", env!("CARGO_CRATE_NAME"));
+    println!("bpf:        {}", BEE);
     println!("log-level:  {}", log::max_level());
     println!("iface:      {}", args.iface);
     println!("args:       {:?}", args);
@@ -236,4 +242,36 @@ fn print_packet(ptr: *const u8, desc: &XdpDesc) {
         "[APP] {saddr}:{sport} -> {daddr}:{dport}  [x{:x}]",
         desc.addr,
     );
+}
+
+pub fn init_with_single_xdp(bee: &str, iface: &str) -> Result<Ebpf> {
+    kit::system::legacy_memlock_rlimit_remove()?;
+
+    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+
+    match aya_log::EbpfLogger::init(&mut ebpf) {
+        Err(e) => {
+            // This can happen if you remove all log statements from your eBPF program.
+            warn!("failed to initialize eBPF logger: {e}");
+        }
+        Ok(logger) => {
+            let mut logger =
+                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
+            tokio::task::spawn(async move {
+                loop {
+                    let mut guard = logger.readable_mut().await.unwrap();
+                    guard.get_inner_mut().flush();
+                    guard.clear_ready();
+                }
+            });
+        }
+    }
+
+    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
+    program.load()?;
+    program.attach(iface, XdpFlags::default())
+        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+
+    debug!("eBPF loaded: {bee}");
+    Ok(ebpf)
 }

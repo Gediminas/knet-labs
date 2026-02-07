@@ -9,8 +9,7 @@ license.workspace = true
 [dependencies]
 aya-ebpf = { workspace = true }
 aya-log-ebpf = { workspace = true }
-
-network-types = "0.0.7"
+network-types = { workspace = true }
 
 poc-common = { workspace = true }
 

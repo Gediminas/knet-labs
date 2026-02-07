@@ -30,7 +30,7 @@ aya-log           = { git = "https://github.com/aya-rs/aya", default-features = 
 # userspace
 anyhow = { version = "1", default-features = false, optional = true }
 clap = { version = "4.5.20", default-features = false, features = ["std"], optional = true } #FIXME: used for colors only
-env_logger = { version = "0.11.5", default-features = false, optional = true }
+env_logger = { version = "0.11.5", default-features = false, features = ["auto-color", "color", "humantime"] , optional = true }
 libc = { version = "0.2.159", default-features = false, optional = true }
 log = { version = "0.4.22", default-features = false, optional = true }
 tokio = { version = "1.40.0", default-features = false, optional = true }

@@ -11,7 +11,6 @@ license.workspace = true
 anyhow = { workspace = true }
 aya = { workspace = true }
 aya-log = { workspace = true }
-env_logger = { workspace = true, default-features = false, features = ["auto-color", "color", "humantime"] }
 libc = { workspace = true }
 log = { workspace = true }
 pcap-file-tokio = { workspace = true }

@@ -2,12 +2,15 @@
 // #![allow(unused_variables)]
 // #![allow(dead_code)]
 
-mod bpf_helper;
 mod cli;
-mod utils;
 
-use crate::utils::init_with_single_xdp;
+use anyhow::{Context as _, Result};
 use aya::maps::RingBuf;
+use aya::{
+    Ebpf, include_bytes_aligned,
+    programs::{Xdp, XdpFlags},
+};
+use log::{debug, info, warn};
 use pcap_file_tokio::pcap::{PcapPacket, PcapWriter};
 use poc_common::RingEventHeader;
 use std::{
@@ -16,17 +19,26 @@ use std::{
 };
 use tokio::{
     fs::File,
-    io::{unix::AsyncFd, AsyncWriteExt, BufWriter},
+    io::{AsyncWriteExt, BufWriter, unix::AsyncFd},
     signal,
 };
 
 const BEE: &str = "poc_xdp_ring";
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+async fn main() -> Result<()> {
     anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
     kit::logger::init();
     let args = cli::parse();
+
+    println!("=======================");
+    println!("app:        {}", env!("CARGO_CRATE_NAME"));
+    println!("bpf:        {}", BEE);
+    println!("log-level:  {}", log::max_level());
+    println!("iface:      {}", args.iface);
+    println!("out:        {}", args.out);
+    println!("args:       {:?}", args);
+    println!("=======================");
 
     let mut ebpf = init_with_single_xdp(BEE, &args.iface)?;
 
@@ -61,7 +73,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
                     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-                    log::info!("Packet: len {len}, timestamp {timestamp:?}");
+                    info!("Packet: len {len}, timestamp {timestamp:?}");
 
                     let packet = PcapPacket::new(timestamp, len as u32, packet);
                     pcap_writer.write_packet(&packet).await.unwrap();
@@ -70,7 +82,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 guard.clear_ready();
             },
             _ = signal::ctrl_c() => {
-                println!("Ctrl-C received, shutting down...");
+                info!("Ctrl-C received, closing...");
                 break;
             },
         }
@@ -78,5 +90,37 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut buf_writer = pcap_writer.into_writer();
     buf_writer.flush().await.unwrap();
+    info!("Finished");
     Ok(())
+}
+pub fn init_with_single_xdp(bee: &str, iface: &str) -> Result<Ebpf> {
+    kit::system::legacy_memlock_rlimit_remove()?;
+
+    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+
+    match aya_log::EbpfLogger::init(&mut ebpf) {
+        Err(e) => {
+            // This can happen if you remove all log statements from your eBPF program.
+            warn!("failed to initialize eBPF logger: {e}");
+        }
+        Ok(logger) => {
+            let mut logger =
+                tokio::io::unix::AsyncFd::with_interest(logger, tokio::io::Interest::READABLE)?;
+            tokio::task::spawn(async move {
+                loop {
+                    let mut guard = logger.readable_mut().await.unwrap();
+                    guard.get_inner_mut().flush();
+                    guard.clear_ready();
+                }
+            });
+        }
+    }
+
+    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
+    program.load()?;
+    program.attach(iface, XdpFlags::default())
+        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+
+    debug!("eBPF loaded: {bee}");
+    Ok(ebpf)
 }
