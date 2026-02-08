@@ -1,9 +1,0 @@
-[workspace]
-resolver = "2"
-
-members = [
-	"router-common",
-	"router-server",
-	"router-client",
-  "xtask"
-]

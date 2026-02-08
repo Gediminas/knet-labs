@@ -2,19 +2,19 @@ extern crate std;
 
 use crate::user::logger::std::string::ToString;
 use clap::builder::styling::AnsiColor;
-use log::Level::{Debug, Info, Trace};
+use log::{Level, LevelFilter};
 use std::io::Write;
 
 pub fn init() {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(LevelFilter::Info)
         .parse_default_env()
         .format(|buf, record| {
             let s1 = AnsiColor::Blue.on_default();
             let s2 = match record.level() {
-                Info => AnsiColor::White.on_default(),
-                Debug => AnsiColor::Green.on_default(),
-                Trace => AnsiColor::Blue.on_default(),
+                Level::Info => AnsiColor::White.on_default(),
+                Level::Debug => AnsiColor::Green.on_default(),
+                Level::Trace => AnsiColor::Blue.on_default(),
                 _ => buf.default_level_style(record.level()),
             };
             let l = &record.level().as_str()[..1];

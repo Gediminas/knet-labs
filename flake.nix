@@ -21,6 +21,8 @@
           which
 
           # ─── Test/Bench ───
+          # vagrant
+          # lima
           python3
           python3Packages.pytest
           python3Packages.pytest-benchmark
