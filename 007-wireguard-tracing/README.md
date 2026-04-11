@@ -1,6 +1,7 @@
-# WireGuard Local-IP NAT
+# WireGuard Tracing
 
-TBD / DOES NOT WORK
+TBD / WIP
+
 
 [Requirements](../#Requirements)
 

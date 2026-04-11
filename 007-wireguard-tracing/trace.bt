@@ -1,0 +1,57 @@
+#!/usr/bin/env bpftrace
+
+kprobe:__flush_workqueue {
+    @entry[tid] = nsecs;
+}
+
+kretprobe:__flush_workqueue {
+    if (@entry[tid]) {
+        $dur = (nsecs - @entry[tid]) / 1000000;
+        if ($dur > 19) {
+                printf("flush_workqueue: tid=%d, %d ms\n", tid, $dur);
+        }
+        @flush_workqueue_ms = hist($dur);
+        delete(@entry[tid]);
+    }
+}
+
+
+tracepoint:sched:sched_wakeup {
+  @wakeups[comm] = count();
+}
+
+kprobe:wg_packet_encrypt_worker {
+  @workers[comm]++;   // will show which kworker is actually running it
+}
+
+
+kprobe:wg_packet_encrypt_worker {
+  @enter_time[tid] = nsecs;
+}
+
+kretprobe:wg_packet_encrypt_worker {
+  @latency = hist(nsecs - @enter_time[tid]);
+  delete(@enter_time[tid]);
+}
+
+
+/*
+kprobe:ptr_ring_consume_bh {
+  // arg0 is struct ptr_ring *
+  $r = (struct ptr_ring *)arg0;
+  @depth = hist($r->producer - $r->consumer_head);
+}
+
+kprobe:wg_queue_enqueue_per_peer_tx {
+  @enqueued++;
+}
+
+kprobe:wg_packet_encrypt_worker {
+  @consumed++;
+}
+
+interval:s:1 {
+  printf("enqueued: %d, consumed: %d\n", @enqueued, @consumed);
+  clear(@enqueued); clear(@consumed);
+}
+*/
