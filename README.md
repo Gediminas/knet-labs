@@ -7,9 +7,10 @@
 - [002](./002-xdp-ringbuf-dump):      **XDP** packet capture with userspace delivery via **ringbuf**
 - [003](./003-af-xdp-kernel-bypass):  **AF_XDP**–based Linux kernel bypass using [xdpilone](https://docs.rs/xdpilone)
 - [004](./004-xdp-udp-routing):       UDP packet routing by **XDP**, controlled via API
-- [005](./005-wireguard-relay):       TBD: WireGuard Relay
-- [006](./006-wireguard-nat):         TBD: WireGuard Local-IP NAT
-- [007](./007-wireguard-tracing):     TBD: WireGuard Tracing
+- [005](./005-wg-relay):              TBD: WireGuard Relay
+- [006](./006-wg-nat):                TBD: WireGuard Local-IP NAT
+- [007](./007-wg-tracing):            WIP: WireGuard Tracing
+- ...
 
 
 ## Requirements
