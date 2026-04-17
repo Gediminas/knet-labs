@@ -17,8 +17,8 @@ use tokio::signal;
 // const BEEE_1: &str = "ip_tunnel_parse_protocol";
 // const HOOK_2: &str = "napi_gro_receive";
 // const BEEE_2: &str = "napi_gro_receive";
-const HOOK_3: &str = "wg_packet_encrypt_worker";
-const BEEE_3: &str = "wg_packet_encrypt_worker";
+// const HOOK_3: &str = "wg_packet_encrypt_worker";
+// const BEEE_3: &str = "wg_packet_encrypt_worker";
 
 // wg_allowedips_insert_v4
 // ip_tunnel_parse_protocol
@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
     println!("app:        {}", env!("CARGO_CRATE_NAME"));
     // println!("bpf1:       {:25}  {}", HOOK_1, BEEE_1);
     // println!("bpf2:       {:25}  {}", HOOK_2, BEEE_2);
-    println!("bpf3:       {:25}  {}", HOOK_3, BEEE_3);
+    // println!("bpf3:       {:25}  {}", HOOK_3, BEEE_3);
     println!("log-level:  {}", log::max_level());
     println!("args:       {:?}", args);
     println!("=======================");
@@ -41,7 +41,10 @@ async fn main() -> Result<()> {
     // let mut _ebpf = init_with_single_xdp(BEE, &args.iface)?;
     kit::system::legacy_memlock_rlimit_remove()?;
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+
+    init_xdp(&mut ebpf, "poc_xdp", &args.wg)?;
     init_with_kprobe(&mut ebpf)?;
+
     // let stat: PerCpuArray<MapData, Stat> =
     //     PerCpuArray::try_from(ebpf.take_map("STAT").expect("STAT-1")).expect("STAT-2");
 
@@ -49,6 +52,19 @@ async fn main() -> Result<()> {
     signal::ctrl_c().await?;
 
     info!("Finished");
+    Ok(())
+}
+
+pub fn init_xdp(ebpf: &mut Ebpf, bee: &str, iface: &str) -> Result<()> {
+    log::info!("Loading XDP on '{iface}'...");
+    log::info!("XDP loaded");
+
+    let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
+    program.load()?;
+    program.attach(iface, XdpFlags::default())
+        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+
+    debug!("eBPF loaded: {bee}");
     Ok(())
 }
 
@@ -97,35 +113,35 @@ fn init_with_kprobe(ebpf: &mut Ebpf) -> Result<()> {
     //     info!("Hooked  '{HOOK_2}' (kprobe: {BEEE_2})");
     // }
 
-    {
-        info!("Loading '{HOOK_3}' (kprobe: {BEEE_3})");
-        let prog: &mut KProbe = ebpf
-            .program_mut(BEEE_3)
-            .expect("Missing eBPF program")
-            .try_into()
-            .expect("Wrong eBPF program type");
+    // {
+    //     info!("Loading '{HOOK_3}' (kprobe: {BEEE_3})");
+    //     let prog: &mut KProbe = ebpf
+    //         .program_mut(BEEE_3)
+    //         .expect("Missing eBPF program")
+    //         .try_into()
+    //         .expect("Wrong eBPF program type");
 
-        prog.load()?;
-        prog.attach(HOOK_3, 0)?;
-        info!("Hooked  '{HOOK_3}' (kprobe: {BEEE_3})");
-    }
+    //     prog.load()?;
+    //     prog.attach(HOOK_3, 0)?;
+    //     info!("Hooked  '{HOOK_3}' (kprobe: {BEEE_3})");
+    // }
 
-    {
-        const IFACE: &str = "lo";
-        const BEE: &str = "poc_xdp_test";
+    // {
+    //     const IFACE: &str = args.wg;
+    //     const BEE: &str = "poc_xdp_test";
 
-        info!("Loading XDP: {BEE}, to {IFACE}");
-        let program: &mut Xdp = ebpf
-            .program_mut(BEE)
-            .expect("xdp-1")
-            .try_into()
-            .expect("xdp-2");
-        program.load()?;
-        program.attach(IFACE, XdpFlags::default())
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+    //     info!("Loading XDP: {BEE}, to {IFACE}");
+    //     let program: &mut Xdp = ebpf
+    //         .program_mut(BEE)
+    //         .expect("xdp-1")
+    //         .try_into()
+    //         .expect("xdp-2");
+    //     program.load()?;
+    //     program.attach(IFACE, XdpFlags::default())
+    //     .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
-        info!("Hooked  XDP: {BEE}, to {IFACE}");
-    }
+    //     info!("Hooked  XDP: {BEE}, to {IFACE}");
+    // }
 
     Ok(())
 }

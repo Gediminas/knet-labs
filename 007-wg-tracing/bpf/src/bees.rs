@@ -21,6 +21,22 @@ pub type WgKey = [u8; WG_KEY_SIZE];
 #[map]
 static STAT: PerCpuArray<Stat> = PerCpuArray::with_max_entries(1, BPF_F_RDONLY);
 
+#[xdp]
+fn poc_xdp(ctx: XdpContext) -> u32 {
+    // match process(&ctx) {
+    //     Ok(ret) => ret,
+    //     Err(e) => {
+    //         let msg = match e {
+    //             XdpError::Outside => "Offset is outside of the packet",
+    //         };
+    //         error!(&ctx, "{} => XDP_ABORTED", msg);
+    //         XDP_ABORTED
+    //     }
+    // }
+    warn!(&ctx, "XDP");
+    XDP_PASS
+}
+
 /////////////////////////////////////////////
 // https://elixir.bootlin.com/linux/v6.14/source/include/uapi/linux/if_tunnel.h#L48
 // struct ip_tunnel_parm {
