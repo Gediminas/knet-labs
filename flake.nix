@@ -1,5 +1,5 @@
 {
-  description = "rust_ebpf_playground:";
+  description = "knet-labs:";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
@@ -19,6 +19,7 @@
           gnumake
           just
           which
+          entr
 
           # ─── Test/Bench ───
           # vagrant
