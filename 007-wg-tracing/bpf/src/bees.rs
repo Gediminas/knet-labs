@@ -2,6 +2,9 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+use core::mem::offset_of;
+use core::net::Ipv4Addr;
+
 use aya_ebpf::bindings::BPF_F_WRONLY_PROG;
 use aya_ebpf::cty::c_void;
 use aya_ebpf::helpers;
@@ -12,9 +15,11 @@ use aya_ebpf::{
     maps::PerCpuArray,
 };
 use aya_log_ebpf::{debug, error, warn};
+use network_types::ip::Ipv4Hdr;
 // use common::{Cidrv4, MAX_PEERS, WgKey};
 use poc_common::Stat;
 
+const IPV4_VERSION: u8 = 4;
 const WG_KEY_SIZE: usize = 32;
 pub type WgKey = [u8; WG_KEY_SIZE];
 
@@ -22,7 +27,25 @@ pub type WgKey = [u8; WG_KEY_SIZE];
 static STAT: PerCpuArray<Stat> = PerCpuArray::with_max_entries(1, BPF_F_RDONLY);
 
 #[xdp]
-fn poc_xdp(ctx: XdpContext) -> u32 {
+fn inbound_wg_xdp(ctx: XdpContext) -> u32 {
+    if ctx.data() + Ipv4Hdr::LEN > ctx.data_end() {
+        return XDP_PASS; //Too small IPv4 packet
+    }
+
+    let version = unsafe { kit::read_unchecked::<u8>(ctx.data()) >> 4 };
+
+    if version != IPV4_VERSION {
+        return XDP_PASS; //Not an IPv4 packet
+    }
+
+    let saddr_pos = ctx.data() + offset_of!(Ipv4Hdr, src_addr);
+    let daddr_pos = ctx.data() + offset_of!(Ipv4Hdr, dst_addr);
+    let saddr = u32::from_be(unsafe { kit::read_unchecked(saddr_pos) });
+    let daddr = u32::from_be(unsafe { kit::read_unchecked(daddr_pos) });
+    let bytes = (ctx.data_end() - ctx.data()) as u64;
+
+    // Some((local_ip.into(), bytes))
+
     // match process(&ctx) {
     //     Ok(ret) => ret,
     //     Err(e) => {
@@ -33,7 +56,24 @@ fn poc_xdp(ctx: XdpContext) -> u32 {
     //         XDP_ABORTED
     //     }
     // }
-    warn!(&ctx, "XDP");
+
+    warn!(&ctx, "XDP: WG {:i} -> {:i}  {} bytes", saddr, daddr, bytes);
+    XDP_PASS
+}
+
+#[xdp]
+fn inbound_eth_xdp(ctx: XdpContext) -> u32 {
+    // match process(&ctx) {
+    //     Ok(ret) => ret,
+    //     Err(e) => {
+    //         let msg = match e {
+    //             XdpError::Outside => "Offset is outside of the packet",
+    //         };
+    //         error!(&ctx, "{} => XDP_ABORTED", msg);
+    //         XDP_ABORTED
+    //     }
+    // }
+    // warn!(&ctx, "XDP: Packet");
     XDP_PASS
 }
 
@@ -103,12 +143,6 @@ pub fn wg_packet_encrypt_worker(ctx: ProbeContext) -> u32 {
 
 use aya_ebpf::macros::xdp;
 
-#[xdp]
-fn poc_xdp_test(ctx: XdpContext) -> u32 {
-    // warn!(&ctx, "xdp");
-    XDP_PASS
-}
-
 // const LOCAL_NETWORK: Cidrv4 = Cidrv4::from_prefix(common::LOCAL_NETWORK, 0);
 
 /// Offset to "wg_peer.handshake.remote_static"
@@ -144,13 +178,3 @@ fn parse_fn_args(ctx: &ProbeContext) {
     let key = unsafe { helpers::bpf_probe_read(key_ptr).unwrap_or_default() };
     warn!(ctx, "key: {}", key[0]);
 }
-
-// Updates mapping:
-//     local tunnel IPv4 address -> wg peer public key
-// #[inline(always)]
-// fn update_mapping(key: WgKey, ip: u32) -> Result<()> {
-//     // LOCAL_IP_TO_KEY
-//     //     .insert(&ip, &key, 0)
-//     //     .map_err(|_| "Failed to insert key")?;
-//     Ok(())
-// }

@@ -12,6 +12,7 @@ aya-log-ebpf = { workspace = true }
 network-types = { workspace = true }
 
 poc-common = { workspace = true }
+kit = { workspace = true, features = ["kernel"] }
 
 [build-dependencies]
 which = { workspace = true }

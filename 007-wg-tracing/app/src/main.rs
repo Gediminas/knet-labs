@@ -42,7 +42,8 @@ async fn main() -> Result<()> {
     kit::system::legacy_memlock_rlimit_remove()?;
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
 
-    init_xdp(&mut ebpf, "poc_xdp", &args.wg)?;
+    init_xdp(&mut ebpf, "inbound_wg_xdp", &args.wg)?;
+    init_xdp(&mut ebpf, "inbound_eth_xdp", &args.iface)?;
     init_with_kprobe(&mut ebpf)?;
 
     // let stat: PerCpuArray<MapData, Stat> =
@@ -57,14 +58,12 @@ async fn main() -> Result<()> {
 
 pub fn init_xdp(ebpf: &mut Ebpf, bee: &str, iface: &str) -> Result<()> {
     log::info!("Loading XDP on '{iface}'...");
-    log::info!("XDP loaded");
 
     let program: &mut Xdp = ebpf.program_mut(bee).unwrap().try_into()?;
     program.load()?;
     program.attach(iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
-    debug!("eBPF loaded: {bee}");
     Ok(())
 }
 
