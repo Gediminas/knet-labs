@@ -1,8 +1,242 @@
+#!/usr/bin/env just --justfile
+
+# WireGuard lab
+#
+#      cli                    net/L2 (Internet)                    vpn                     web
+#   ┌────────┐          ┌─────────────────────────┐          ┌──────────────┐          ┌─────────┐
+#   │   wg0 -│----------│----------tunnel---------│----------│- wg0 ─ eth1 ─┼──netkit──┼─ eth0   │
+#   │    |   │          │                         │          │   |          │          │         │
+#   │  eth0 ═╪══netkit══╪═ nk-cli ═ br0 ═ nk-vpn ═╪══netkit══╪═ eth0        │          │         │
+#   └────────┘          └─────────────────────────┘          └──────────────┘          └─────────┘
+#
+#   ---: plain packets (in tunnel)
+#   ───: plain packets
+#   ═══: encrypted packets
+#   cli: VPN client
+#   net: "Internet" bridge (NAT/tc/eBPF can be added)
+#   vpn: VPN server — eth0 cli-facing, eth1 internet-facing, wg0 tunnel
+#   web: "WEB-server"
+
+prj     := "k007"
+vpn_ns  := prj + "-vpn"
+cli_ns  := prj + "-cli"
+net_ns  := prj + "-net"
+web_ns  := prj + "-web"
+
+cli_ip        := "192.168.111.101"
+net_br        := "192.168.111.254"
+vpn_inner_ip  := "192.168.111.1"
+
+vpn_outter_ip := "192.168.200.1"
+web_ip        := "192.168.200.2"
+
+vpn_wg        := "10.5.0.1"
+cli_wg        := "10.5.5.101"
+
+# WireGuard keys
+vpn_key := "wDr9XWC6ECSHQ257B2/hp+jldOUT/LWjy29nmsX12lQ="
+vpn_pub := "SVpc9mmL3ib8eUzUWFYMDxVwChNXB9THylpBH2BEAmM="
+cli_key := "qFNHSpC/v76GwH4y4IljpeoqheXzRZrT40d9Izeo7HQ="
+cli_pub := "9/8FW+6zaxl774NmCk+m6470/cF9w7H4pzsQLfprjTM="
+
 app := "target/x86_64-unknown-linux-musl/debug/poc"
+
+ip:=`dirname $(which ip)`
+just:=`which just`
+
+###################################################
+
+default:
+    @just --list
+
+###################################################
+# Dev
+###################################################
 
 dev-build:
     cargo watch --clear -x build
 
 dev-run *args:
-    echo {{app}} | entr -c sudo {{app}} {{args}}
+    echo {{app}} | entr -rc sudo {{app}} {{args}}
 
+root:
+    sudo -Es
+
+unroot:
+    sudo -E chown $(logname):$(logname) -R target
+
+dev *args:
+    cargo watch --clear -x "build" -s "\
+        chown $(logname):$(logname) -R target ;\
+        cargo run -- {{args}}"
+
+lab-dev *args:
+    cargo watch --clear -x "build" -s "\
+        chown $(logname):$(logname) -R target ;\
+        sudo ip netns exec {{vpn_ns}} $(pwd)/{{app}} --wg wg0 --iface eth0 {{args}}"
+
+###################################################
+# Lab lifecycle
+###################################################
+
+lab-kernel ver="v7.0.1":
+    vng -r {{ver}} -e "PATH={{ip}}:$PATH {{just}} --version"
+
+# Lab: Bring up the full lab
+lab-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ip netns list | grep -q {{prj}}; then
+        echo -e "Lab already running.\nRun 'just reload'" && exit 1
+    fi
+
+    # ── namespaces ───────────────────────────────────
+    ip netns add {{vpn_ns}}
+    ip netns add {{cli_ns}}
+    ip netns add {{net_ns}}
+    ip netns add {{web_ns}}
+
+    # ── namespaces ───────────────────────────────────
+
+    # # bridge: cli - net - vpn
+    ip netns exec {{net_ns}} ip link add br0 type bridge
+
+    # vpn - net
+    ip netns exec {{vpn_ns}} ip link add eth0 type netkit mode l2 peer name nk-vpn
+    ip netns exec {{vpn_ns}} ip link set nk-vpn netns {{net_ns}}
+    ip netns exec {{vpn_ns}} ip addr add {{vpn_inner_ip}}/24 dev eth0
+    ip netns exec {{vpn_ns}} ip link set eth0 up
+
+    # cli - net
+    ip netns exec {{cli_ns}} ip link add eth0 type netkit mode l2 peer name nk-cli
+    ip netns exec {{cli_ns}} ip link set nk-cli netns {{net_ns}}
+    ip netns exec {{cli_ns}} ip addr add {{cli_ip}}/24 dev eth0
+    ip netns exec {{cli_ns}} ip link set eth0 up
+
+    # vpn - web
+    ip netns exec {{vpn_ns}} ip link add eth1 type netkit mode l2 peer name nk0
+    ip netns exec {{vpn_ns}} ip link set nk0 netns {{web_ns}}
+    ip netns exec {{vpn_ns}} ip addr add {{vpn_outter_ip}}/24 dev eth1
+    ip netns exec {{vpn_ns}} ip link set eth1 up
+
+    ip netns exec {{web_ns}} ip addr add {{web_ip}}/24 dev nk0
+    ip netns exec {{web_ns}} ip link set nk0 up
+
+    ######
+    ip netns exec {{net_ns}} ip link set nk-cli master br0
+    ip netns exec {{net_ns}} ip link set nk-vpn master br0
+    ip netns exec {{net_ns}} ip addr add {{net_br}}/24 dev br0
+    ######
+    ######
+    ip netns exec {{net_ns}} ip link set nk-vpn up
+    ip netns exec {{net_ns}} ip link set nk-cli up
+    ip netns exec {{net_ns}} ip link set br0 up
+
+
+    # # ── WireGuard ────────────────────────────────────
+    ip netns exec {{vpn_ns}} ip link add wg0 type wireguard
+    ip netns exec {{vpn_ns}} ip addr add {{vpn_wg}}/16 dev wg0
+    echo '{{vpn_key}}' | ip netns exec {{vpn_ns}} wg set wg0 \
+        listen-port 51820 private-key /dev/stdin
+    ip netns exec {{vpn_ns}} wg set wg0 \
+        peer {{cli_pub}} allowed-ips {{cli_wg}}/32
+    ip netns exec {{vpn_ns}} ip link set wg0 up
+
+
+    ip netns exec {{cli_ns}} ip link add wg0 type wireguard
+    ip netns exec {{cli_ns}} ip addr add {{cli_wg}}/16 dev wg0
+    echo '{{cli_key}}' | ip netns exec {{cli_ns}} wg set wg0 \
+        private-key /dev/stdin \
+        peer {{vpn_pub}} \
+            endpoint {{vpn_inner_ip}}:51820 \
+            allowed-ips 0.0.0.0/0 \
+            persistent-keepalive 25
+    ip netns exec {{cli_ns}} ip link set wg0 up
+
+    # ── routing ──────────────────────────────────────
+    ip netns exec {{cli_ns}} ip route add {{web_ip}} via {{vpn_wg}}
+    ip netns exec {{vpn_ns}} sysctl -qw net.ipv4.ip_forward=1
+    ip netns exec {{web_ns}} ip route add default via {{vpn_outter_ip}}
+
+    # ── check ──────────────────────────────────────
+    echo "* Lab is up."
+    echo "──────────────────────────────────────────────────────────"
+    just lab-health-check
+    echo "──────────────────────────────────────────────────────────"
+    just lab-info
+
+# Lab: Tear down the full lab
+lab-down:
+    #!/usr/bin/env bash
+    ns=$(ip netns list | awk '/{{prj}}/{print $1}')
+    [ -z "$ns" ] && echo "Nothing to tear down." && exit 0
+    echo "$ns" | xargs -rn1 ip netns del
+    echo "* Lab torn down."
+
+# Lab: Tear down and bring back up
+lab-reload: lab-down lab-up
+
+# Lab: Up extra (lo ifaces)
+lab-up-extra:
+    @ip netns exec {{net_ns}} ip link set lo up
+    @ip netns exec {{vpn_ns}} ip link set lo up
+    @ip netns exec {{web_ns}} ip link set lo up
+    @ip netns exec {{cli_ns}} ip link set lo up
+    @just lab-info
+
+###################################################
+# Status / debug
+###################################################
+
+# Lab: Ping through WireGuard tunnel and to web
+lab-health-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo -en "Ping {{vpn_inner_ip}}: \t"
+    ip netns exec {{cli_ns}} ping -c1 -t1 {{vpn_inner_ip}} | grep loss
+    echo -en "Ping {{vpn_wg}}:     \t"
+    ip netns exec {{cli_ns}} ping -c1 -t1 {{vpn_wg}} | grep loss
+    echo -en "Ping {{web_ip}}: \t"
+    ip netns exec {{cli_ns}} ping -c1 -t5 {{web_ip}} | grep loss
+    echo "* Lab is OK"
+
+# Lab: Info
+lab-info:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Namespaces:"
+    fmt='.[] | "  \(.ifindex) \(.ifname) \(.operstate) \([.addr_info[]? | select(.family=="inet") | .local] | join(" "))"'
+    for x in "{{vpn_ns}}" "{{cli_ns}}" "{{net_ns}}" "{{web_ns}}"; do
+        echo -e "  ${x}:"
+        ip netns exec "$x" ip -j addr | jq -r "$fmt" | while read -r id name state ip; do
+            printf "   %3s: %-10s %-8s %s\n" "$id" "$name" "$state" "$ip"
+        done
+    done
+
+    echo "WireGuard:"
+    echo -n "  client: "
+    ip netns exec {{cli_ns}} wg show | grep handshake
+    echo -n "  vpn:    "
+    ip netns exec {{vpn_ns}} wg show | grep handshake
+
+# Lab: Show WireGuard status
+lab-wg-status:
+    @echo "=== {{vpn_ns}} ==="
+    ip netns exec {{vpn_ns}} wg show
+    @echo
+    @echo "=== {{cli_ns}} ==="
+    ip netns exec {{cli_ns}} wg show
+
+
+lab-shell-cli:
+    ip netns exec {{cli_ns}} bash
+
+lab-shell-net:
+    ip netns exec {{net_ns}} bash
+
+lab-shell-vpn *ARGS:
+    @if [ -z "{{ARGS}}" ]; then ip netns exec {{vpn_ns}} bash; else ip netns exec {{vpn_ns}} bash -c "{{ARGS}}"; fi
+
+lab-shell-web:
+    ip netns exec {{web_ns}} bash
