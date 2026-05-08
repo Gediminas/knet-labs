@@ -1,0 +1,138 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * wg_loops.bt — observe WireGuard's distinct execution mechanisms
+ *
+ * MECHANISMS:
+ *   [A] eth0 NAPI poll      — hardware, DMA drain
+ *   [B] socket callback     — synchronous chain inside A
+ *   [2] decrypt workqueue   — wg_packet_decrypt_worker
+ *   [3] peer NAPI kthread   — wg_packet_rx_poll
+ *
+ * Filter: set WG_IF to your WireGuard interface name.
+ */
+
+BEGIN
+{
+    @wg_if = "nordlayer";   /* ← change to your wg interface */
+    printf("%-10s %-4s %-20s %-6s %s\n",
+           "TIME_US", "CPU", "THREAD", "MECH", "EVENT");
+    printf("%s\n",
+           "----------------------------------------------------------------------");
+}
+
+/* ── MECHANISM A: eth0 NAPI poll ─────────────────────────────────────────
+ * tracepoint:napi:napi_poll fires at the end of each poll cycle.
+ * args->dev_name = interface name, args->work = packets processed this poll.
+ * We only print for the physical interface feeding WireGuard.
+ * Change "eth0" to your physical NIC name.
+ */
+tracepoint:napi:napi_poll
+/str(args->dev_name) != @wg_if/  /* physical NIC, not wg peer napi */
+{
+    if (args->work > 0) {
+        printf("%-10llu %-4d %-20s %-6s napi_poll dev=%-10s pkts=%d\n",
+            elapsed / 1000, cpu, comm,
+            "[A]",
+            str(args->dev_name), args->work);
+    }
+}
+
+/* ── MECHANISM B: socket callback chain (runs inside A) ─────────────────
+ * wg_receive is the encap_rcv entry point — first WireGuard touch.
+ * wg_packet_receive dispatches handshake vs data.
+ * wg_packet_consume_data does the index lookup and enqueues.
+ * All run synchronously inside eth0's NAPI poll context.
+ */
+kprobe:wg_packet_receive
+{
+    $wg     = (struct wg_device *)arg0;
+    $skb    = (struct sk_buff *)arg1;
+    $ifname = $wg->dev->name;
+
+    if ($ifname == @wg_if) {
+        $type = *(uint8 *)($skb->data);
+        printf("%-10llu %-4d %-20s %-6s wg_packet_receive      msg_type=%d skb_len=%d\n",
+            elapsed / 1000, cpu, comm,
+            "[B]",
+            $type, $skb->len);
+    }
+}
+
+kprobe:wg_packet_consume_data
+{
+    $wg     = (struct wg_device *)arg0;
+    $skb    = (struct sk_buff *)arg1;
+    $ifname = $wg->dev->name;
+
+    if ($ifname == @wg_if) {
+        printf("%-10llu %-4d %-20s %-6s wg_packet_consume_data skb_len=%d\n",
+            elapsed / 1000, cpu, comm,
+            "[B]",
+            $skb->len);
+    }
+}
+
+/* ── MECHANISM 2: decrypt workqueue ─────────────────────────────────────
+ * Runs in wg->packet_crypt_wq, per-cpu kworker.
+ * comm will be "kworker/N:M".
+ */
+kprobe:wg_packet_decrypt_worker
+{
+    printf("%-10llu %-4d %-20s %-6s wg_packet_decrypt_worker\n",
+        elapsed / 1000, cpu, comm,
+        "[2]");
+}
+
+/* ── MECHANISM 3: per-peer NAPI kthread ──────────────────────────────────
+ * Runs in napi/nordlayer-N kthread.
+ * tracepoint:napi:napi_poll for the wg interface catches the poll boundary.
+ * kprobe:wg_packet_rx_poll gives inner detail.
+ */
+tracepoint:napi:napi_poll
+/str(args->dev_name) == @wg_if/
+{
+    printf("%-10llu %-4d %-20s %-6s napi_poll dev=%-10s pkts=%d\n",
+        elapsed / 1000, cpu, comm,
+        "[3]",
+        str(args->dev_name), args->work);
+}
+
+kprobe:wg_packet_rx_poll
+{
+    $napi   = (struct napi_struct *)arg0;
+    $budget = arg1;
+    $peer   = (struct wg_peer *)
+                  ((uint64)$napi - offsetof(struct wg_peer, napi));
+    $ifname = $peer->device->dev->name;
+
+    if ($ifname == @wg_if) {
+        printf("%-10llu %-4d %-20s %-6s wg_packet_rx_poll      budget=%d\n",
+            elapsed / 1000, cpu, comm,
+            "[3]",
+            $budget);
+    }
+}
+
+kretprobe:wg_packet_rx_poll
+{
+    printf("%-10llu %-4d %-20s %-6s wg_packet_rx_poll      ret=%d\n",
+        elapsed / 1000, cpu, comm,
+        "[3]",
+        retval);
+}
+
+kprobe:wg_packet_consume_data_done
+{
+    $peer   = (struct wg_peer *)arg0;
+    $skb    = (struct sk_buff *)arg1;
+    $ifname = $peer->device->dev->name;
+
+    if ($ifname == @wg_if) {
+        printf("%-10llu %-4d %-20s %-6s wg_packet_consume_data_done skb_len=%d\n",
+            elapsed / 1000, cpu, comm,
+            "[3]",
+            $skb->len);
+    }
+}
+

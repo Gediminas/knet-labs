@@ -5,16 +5,18 @@
 use core::mem::offset_of;
 use core::net::Ipv4Addr;
 
-use aya_ebpf::bindings::BPF_F_WRONLY_PROG;
+use aya_ebpf::bindings::{BPF_F_WRONLY_PROG, task_struct};
 use aya_ebpf::cty::c_void;
-use aya_ebpf::helpers;
+use aya_ebpf::helpers::generated::bpf_get_current_task;
+use aya_ebpf::helpers::{self, bpf_probe_read_kernel};
 use aya_ebpf::macros::{kprobe, map};
 use aya_ebpf::programs::{ProbeContext, XdpContext};
 use aya_ebpf::{
     bindings::{BPF_F_RDONLY, xdp_action::XDP_PASS},
     maps::PerCpuArray,
 };
-use aya_log_ebpf::{debug, error, warn};
+use aya_log_ebpf::{debug, error, info, warn};
+use network_types::eth::{EthHdr, EtherType};
 use network_types::ip::Ipv4Hdr;
 // use common::{Cidrv4, MAX_PEERS, WgKey};
 use poc_common::Stat;
@@ -44,6 +46,14 @@ fn inbound_wg_xdp(ctx: XdpContext) -> u32 {
     let daddr = u32::from_be(unsafe { kit::read_unchecked(daddr_pos) });
     let bytes = (ctx.data_end() - ctx.data()) as u64;
 
+    let ii = ctx.ingress_ifindex();
+    let q = ctx.rx_queue_index();
+
+    warn!(
+        &ctx,
+        "XDP-WG: {}: {:i} -> {:i}  {} bytes", ii, saddr, daddr, bytes
+    );
+
     // Some((local_ip.into(), bytes))
 
     // match process(&ctx) {
@@ -57,23 +67,34 @@ fn inbound_wg_xdp(ctx: XdpContext) -> u32 {
     //     }
     // }
 
-    warn!(&ctx, "XDP: WG {:i} -> {:i}  {} bytes", saddr, daddr, bytes);
     XDP_PASS
 }
 
 #[xdp]
 fn inbound_eth_xdp(ctx: XdpContext) -> u32 {
-    // match process(&ctx) {
-    //     Ok(ret) => ret,
-    //     Err(e) => {
-    //         let msg = match e {
-    //             XdpError::Outside => "Offset is outside of the packet",
-    //         };
-    //         error!(&ctx, "{} => XDP_ABORTED", msg);
-    //         XDP_ABORTED
-    //     }
-    // }
-    // warn!(&ctx, "XDP: Packet");
+    if ctx.data() + EthHdr::LEN + Ipv4Hdr::LEN > ctx.data_end() {
+        return XDP_PASS; //Too small IPv4 packet
+    }
+
+    let ether_type_pos = ctx.data() + offset_of!(EthHdr, ether_type);
+    let ether_type: u16 = unsafe { kit::read_unchecked(ether_type_pos) };
+
+    if ether_type != EtherType::Ipv4 as u16 {
+        // warn!(&ctx, "XDP: IPv4");
+        return XDP_PASS;
+    }
+
+    let iph_pos = ctx.data() + EthHdr::LEN;
+    let saddr_pos = iph_pos + offset_of!(Ipv4Hdr, src_addr);
+    let daddr_pos = iph_pos + offset_of!(Ipv4Hdr, dst_addr);
+    let saddr: u32 = u32::from_be_bytes(unsafe { kit::read_unchecked(saddr_pos) });
+    let daddr: u32 = u32::from_be_bytes(unsafe { kit::read_unchecked(daddr_pos) });
+    let ii = ctx.ingress_ifindex();
+
+    info!(&ctx, "XDP-ET: {}: {:i} -> {:i}", ii, saddr, daddr);
+
+    // get wg receicer index
+
     XDP_PASS
 }
 
@@ -137,7 +158,19 @@ pub fn napi_gro_receive(ctx: ProbeContext) -> u32 {
 #[kprobe]
 pub fn wg_packet_encrypt_worker(ctx: ProbeContext) -> u32 {
     debug!(&ctx, "kprobe: wg_packet_encrypt_worker()");
+
+    // let netns_ino = BPF_CORE_READ(wg, dev, nd_net.net, ns.inum);
+    // debug!(&ctx, "kprobe: {}", netns_ino);
+
     // parse_fn_args(&ctx);
+    let task = unsafe { bpf_get_current_task() as *const task_struct };
+
+    // task->nsproxy->net_ns->ns.inum
+    // let nsproxy = unsafe { bpf_probe_read_kernel(&(*task).nsproxy).unwrap_or_default() };
+    // let net_ns = unsafe { bpf_probe_read_kernel(&(*nsproxy).net_ns).unwrap_or_default() };
+    // let inum = unsafe { bpf_probe_read_kernel(&(*net_ns).ns.inum).unwrap_or_default() };
+
+    // debug!(ctx, "wg_packet_encrypt_worker netns inum={}", inum);
     0
 }
 

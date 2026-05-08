@@ -1,0 +1,112 @@
+#!/usr/bin/env bpftrace
+
+/*
+ * wireguard_napi.bt
+ *
+ * Traces the full WireGuard receive path:
+ *   wg_packet_rx_poll (NAPI)
+ *   wg_packet_decrypt_worker
+ *   wg_packet_consume_data_done
+ *
+ * Run as root. Requires CONFIG_WIREGUARD=m or =y and BTF enabled.
+ * Verify symbols first:
+ *   grep wg_ /proc/kallsyms
+ */
+
+BEGIN
+{
+    printf("%-8s %-6s %-32s %s\n", "TIME_US", "CPU", "FUNC", "INFO");
+}
+
+/*
+ * NAPI poll entry — napi arg is struct napi_struct *
+ * peer = container_of(napi, struct wg_peer, napi)
+ * wg   = peer->device
+ * dev  = wg->dev
+ */
+kprobe:wg_packet_rx_poll
+{
+    $napi   = (struct napi_struct *)arg0;
+    $budget = arg1;
+
+    /*
+     * container_of(napi, struct wg_peer, napi):
+     * offset of napi inside wg_peer — use BTF cast directly.
+     * bpftrace resolves struct wg_peer if wireguard.ko BTF is loaded.
+     */
+    $peer   = (struct wg_peer *)
+                  ((uint64)$napi - offsetof(struct wg_peer, napi));
+    $wg     = $peer->device;
+    $dev    = $wg->dev;
+    $ifname = $dev->name;
+    $netns  = $dev->nd_net.net->ns.inum;
+
+    printf("%-8llu %-6d %-32s if=%-10s netns=%-10u budget=%d\n",
+        elapsed / 1000, cpu,
+        "wg_packet_rx_poll",
+        $ifname, $netns, $budget);
+}
+
+kretprobe:wg_packet_rx_poll
+{
+    printf("%-8llu %-6d %-32s ret=%d\n",
+        elapsed / 1000, cpu,
+        "wg_packet_rx_poll [RET]",
+        retval);
+}
+
+/*
+ * Decrypt worker — runs per-CPU, processes the decrypt queue.
+ * arg0 is struct work_struct *, navigate to wg_device via
+ * the crypt_queue it is embedded in.
+ */
+kprobe:wg_packet_decrypt_worker
+{
+    printf("%-8llu %-6d %-32s\n",
+        elapsed / 1000, cpu,
+        "wg_packet_decrypt_worker");
+}
+
+/*
+ * Packet consumed after decrypt — skb is ready for network stack.
+ * arg0: struct wg_peer *, arg1: struct sk_buff *
+ */
+kprobe:wg_packet_consume_data_done
+{
+    $peer   = (struct wg_peer *)arg0;
+    $skb    = (struct sk_buff *)arg1;
+    $wg     = $peer->device;
+    $dev    = $wg->dev;
+    $ifname = $dev->name;
+    $len    = $skb->len;
+
+    printf("%-8llu %-6d %-32s if=%-10s skb_len=%d\n",
+        elapsed / 1000, cpu,
+        "wg_packet_consume_data_done",
+        $ifname, $len);
+}
+
+
+/*
+ * Handshake receive — separate path, not NAPI.
+ * arg0: struct wg_device *, arg1: struct sk_buff *
+ */
+kprobe:wg_packet_receive
+{
+    $wg     = (struct wg_device *)arg0;
+    $skb    = (struct sk_buff *)arg1;
+    $dev    = $wg->dev;
+    $ifname = $dev->name;
+    $netns  = $dev->nd_net.net->ns.inum;
+
+    printf("%-8llu %-6d %-32s if=%-10s netns=%-10u skb_len=%d\n",
+        elapsed / 1000, cpu,
+        "wg_packet_receive",
+        $ifname, $netns, $skb->len);
+}
+
+END
+{
+    printf("\nDone.\n");
+}
+

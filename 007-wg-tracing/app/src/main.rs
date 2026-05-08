@@ -11,14 +11,15 @@ use aya::{
 };
 use aya_log::EbpfLogger;
 use log::{debug, info, warn};
+use std::time::Duration;
 use tokio::signal;
 
 // const HOOK_1: &str = "ip_tunnel_parse_protocol";
 // const BEEE_1: &str = "ip_tunnel_parse_protocol";
 // const HOOK_2: &str = "napi_gro_receive";
 // const BEEE_2: &str = "napi_gro_receive";
-// const HOOK_3: &str = "wg_packet_encrypt_worker";
-// const BEEE_3: &str = "wg_packet_encrypt_worker";
+const HOOK_3: &str = "wg_packet_encrypt_worker";
+const BEEE_3: &str = "wg_packet_encrypt_worker";
 
 // wg_allowedips_insert_v4
 // ip_tunnel_parse_protocol
@@ -33,10 +34,11 @@ async fn main() -> Result<()> {
     println!("app:        {}", env!("CARGO_CRATE_NAME"));
     // println!("bpf1:       {:25}  {}", HOOK_1, BEEE_1);
     // println!("bpf2:       {:25}  {}", HOOK_2, BEEE_2);
-    // println!("bpf3:       {:25}  {}", HOOK_3, BEEE_3);
+    println!("bpf3:       {:25}  {}", HOOK_3, BEEE_3);
     println!("log-level:  {}", log::max_level());
     println!("args:       {:?}", args);
     println!("=======================");
+    // std::thread::sleep(Duration::from_secs(1));
 
     // let mut _ebpf = init_with_single_xdp(BEE, &args.iface)?;
     kit::system::legacy_memlock_rlimit_remove()?;
@@ -112,18 +114,18 @@ fn init_with_kprobe(ebpf: &mut Ebpf) -> Result<()> {
     //     info!("Hooked  '{HOOK_2}' (kprobe: {BEEE_2})");
     // }
 
-    // {
-    //     info!("Loading '{HOOK_3}' (kprobe: {BEEE_3})");
-    //     let prog: &mut KProbe = ebpf
-    //         .program_mut(BEEE_3)
-    //         .expect("Missing eBPF program")
-    //         .try_into()
-    //         .expect("Wrong eBPF program type");
+    {
+        info!("Loading '{HOOK_3}' (kprobe: {BEEE_3})");
+        let prog: &mut KProbe = ebpf
+            .program_mut(BEEE_3)
+            .expect("Missing eBPF program")
+            .try_into()
+            .expect("Wrong eBPF program type");
 
-    //     prog.load()?;
-    //     prog.attach(HOOK_3, 0)?;
-    //     info!("Hooked  '{HOOK_3}' (kprobe: {BEEE_3})");
-    // }
+        prog.load()?;
+        prog.attach(HOOK_3, 0)?;
+        info!("Hooked  '{HOOK_3}' (kprobe: {BEEE_3})");
+    }
 
     // {
     //     const IFACE: &str = args.wg;
