@@ -10,6 +10,7 @@
 - [005](./005-wg-relay):              TBD: WireGuard Relay
 - [006](./006-wg-nat):                TBD: WireGuard Local-IP NAT
 - [007](./007-wg-tracing):            WIP: WireGuard Tracing
+- [008](./008-vng+netns+netkit):      Demo: **virtme-ng** + **netns** + **netkit** + WireGuard lab
 - ...
 
 
