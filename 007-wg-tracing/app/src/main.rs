@@ -18,6 +18,8 @@ use tokio::signal;
 // const BEEE_1: &str = "ip_tunnel_parse_protocol";
 // const HOOK_2: &str = "napi_gro_receive";
 // const BEEE_2: &str = "napi_gro_receive";
+const HOOK_2: &str = "wg_packet_decrypt_worker";
+const BEEE_2: &str = "wg_packet_decrypt_worker";
 const HOOK_3: &str = "wg_packet_encrypt_worker";
 const BEEE_3: &str = "wg_packet_encrypt_worker";
 
@@ -33,7 +35,7 @@ async fn main() -> Result<()> {
     println!("=======================");
     println!("app:        {}", env!("CARGO_CRATE_NAME"));
     // println!("bpf1:       {:25}  {}", HOOK_1, BEEE_1);
-    // println!("bpf2:       {:25}  {}", HOOK_2, BEEE_2);
+    println!("bpf2:       {:25}  {}", HOOK_2, BEEE_2);
     println!("bpf3:       {:25}  {}", HOOK_3, BEEE_3);
     println!("log-level:  {}", log::max_level());
     println!("args:       {:?}", args);
@@ -101,18 +103,18 @@ fn init_with_kprobe(ebpf: &mut Ebpf) -> Result<()> {
     //     info!("Hooked  '{HOOK_1}' (kprobe: {BEEE_1})");
     // }
 
-    // {
-    //     info!("Loading '{HOOK_2}' (kprobe: {BEEE_2})");
-    //     let prog: &mut KProbe = ebpf
-    //         .program_mut(BEEE_2)
-    //         .expect("Missing eBPF program")
-    //         .try_into()
-    //         .expect("Wrong eBPF program type");
+    {
+        info!("Loading '{HOOK_2}' (kprobe: {BEEE_2})");
+        let prog: &mut KProbe = ebpf
+            .program_mut(BEEE_2)
+            .expect("Missing eBPF program")
+            .try_into()
+            .expect("Wrong eBPF program type");
 
-    //     prog.load()?;
-    //     prog.attach(HOOK_2, 0)?;
-    //     info!("Hooked  '{HOOK_2}' (kprobe: {BEEE_2})");
-    // }
+        prog.load()?;
+        prog.attach(HOOK_2, 0)?;
+        info!("Hooked  '{HOOK_2}' (kprobe: {BEEE_2})");
+    }
 
     {
         info!("Loading '{HOOK_3}' (kprobe: {BEEE_3})");

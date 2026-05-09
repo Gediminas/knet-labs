@@ -163,7 +163,26 @@ pub fn wg_packet_encrypt_worker(ctx: ProbeContext) -> u32 {
     // debug!(&ctx, "kprobe: {}", netns_ino);
 
     // parse_fn_args(&ctx);
-    let task = unsafe { bpf_get_current_task() as *const task_struct };
+    // let task = unsafe { bpf_get_current_task() as *const task_struct };
+
+    // task->nsproxy->net_ns->ns.inum
+    // let nsproxy = unsafe { bpf_probe_read_kernel(&(*task).nsproxy).unwrap_or_default() };
+    // let net_ns = unsafe { bpf_probe_read_kernel(&(*nsproxy).net_ns).unwrap_or_default() };
+    // let inum = unsafe { bpf_probe_read_kernel(&(*net_ns).ns.inum).unwrap_or_default() };
+
+    // debug!(ctx, "wg_packet_encrypt_worker netns inum={}", inum);
+    0
+}
+
+#[kprobe]
+pub fn wg_packet_decrypt_worker(ctx: ProbeContext) -> u32 {
+    debug!(&ctx, "kprobe: wg_packet_decrypt_worker()");
+
+    // let netns_ino = BPF_CORE_READ(wg, dev, nd_net.net, ns.inum);
+    // debug!(&ctx, "kprobe: {}", netns_ino);
+
+    // parse_fn_args(&ctx);
+    // let task = unsafe { bpf_get_current_task() as *const task_struct };
 
     // task->nsproxy->net_ns->ns.inum
     // let nsproxy = unsafe { bpf_probe_read_kernel(&(*task).nsproxy).unwrap_or_default() };
