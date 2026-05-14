@@ -21,9 +21,21 @@
           which
           entr
 
+          # ─── Kernel build tools ───
+          gnumake
+          flex
+          bison
+          bc
+          perl
+          openssl
+          elfutils             # libelf, needed for BTF
+          # dwarves              # pahole, needed for CONFIG_DEBUG_INFO_BTF
+          ncurses              # menuconfig
+          pkg-config
+          zstd
+          cpio
+
           # ─── Test/Bench ───
-          # vagrant
-          # lima
           python3
           python3Packages.pytest
           python3Packages.pytest-benchmark
@@ -34,7 +46,6 @@
           # bpftools
           # xdp-tools
           # stress-ng
-          # python3
         ];
 
         shellHook = ''
