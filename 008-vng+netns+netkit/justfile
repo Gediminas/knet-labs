@@ -212,7 +212,7 @@ enter machine:
         *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
     esac
     sudo ip netns exec "$ns" unshare --uts bash -c \
-        'hostname {{machine}}; exec bash --rcfile <(echo "PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
+        'hostname {{machine}}; exec bash --rcfile <(echo "HISTFILE=/tmp/{{prj}}-{{machine}}.history; PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
 
 # Run command in machine
 exec machine *ARGS:
