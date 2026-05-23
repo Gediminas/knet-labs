@@ -202,8 +202,8 @@ ping mode="verbose" count="3":
     fi
 
 
-# Shell into machine
-enter machine:
+# Enter machine or run command
+enter machine *ARGS:
     #!/usr/bin/env bash
     case "{{machine}}" in
         vpn) ns="{{vpn_ns}}" ;;
@@ -211,16 +211,9 @@ enter machine:
         web) ns="{{web_ns}}" ;;
         *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
     esac
-    sudo ip netns exec "$ns" unshare --uts bash -c \
-        'hostname {{machine}}; exec bash --rcfile <(echo "HISTFILE=/tmp/{{prj}}-{{machine}}.history; PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
-
-# Run command in machine
-exec machine *ARGS:
-    #!/usr/bin/env bash
-    case "{{machine}}" in
-        vpn) ns="{{vpn_ns}}" ;;
-        cli) ns="{{cli_ns}}" ;;
-        web) ns="{{web_ns}}" ;;
-        *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
-    esac
-    sudo ip netns exec "$ns" {{ARGS}}
+    if [[ -z "{{ARGS}}" ]]; then
+        sudo HOME="$HOME" ip netns exec "$ns" unshare --uts bash -c \
+            'hostname {{machine}}; exec bash --rcfile <(echo "HISTFILE=/tmp/{{prj}}-{{machine}}.history; PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
+    else
+        sudo ip netns exec "$ns" {{ARGS}}
+    fi
