@@ -1,4 +1,18 @@
 #!/usr/bin/env just --justfile
+#
+# <topology>
+#     cli  10.5.5.101   10.5.0.1  vpn                      web
+#  ┌─────────┐             ┌───────────────┐            ┌────────┐
+#  │ ── wg0 -│---tunnel----│- wg0 ────┐    │            │        │
+#  │     ↕   │             │   ↕      │    │            │        │
+#  │   eth0 ═╪══ netkit ═══╪═ eth0   eth1 ─┼───netkit───┼─ nk0   │
+#  └─────────┘             └───────────────┘            └────────┘
+#  192.168.111.101   192.168.111.1 / 192.168.222.1  192.168.222.80
+#
+#    --- plain packets (inside tunnel)
+#    ─── plain packets
+#    ═══ encrypted packets
+# </topology>
 
 prj     := "k008"
 vpn_ns  := prj + "-vpn"
@@ -22,58 +36,23 @@ cli_pub := "9/8FW+6zaxl774NmCk+m6470/cF9w7H4pzsQLfprjTM="
 help:
     @just --list
 
-# Topology + live lab state
-status:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
-
-    echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════${R}"
-    echo -e "${D}"
-    echo '    cli  10.5.5.101   10.5.0.1  vpn                      web'
-    echo ' ┌─────────┐             ┌───────────────┐            ┌────────┐'
-    echo ' │ ── wg0 -│---tunnel----│- wg0 ────┐    │            │        │'
-    echo ' │     ↕   │             │   ↕      │    │            │        │'
-    echo ' │   eth0 ═╪══ netkit ═══╪═ eth0   eth1 ─┼───netkit───┼─ nk0   │'
-    echo ' └─────────┘             └───────────────┘            └────────┘'
-    echo ' 192.168.111.101   192.168.111.1 / 192.168.222.1  192.168.222.80'
-    echo ''
-    echo '   --- plain packets (inside tunnel)'
-    echo '   ─── plain packets'
-    echo -e '   ═══ encrypted packets'"${R}"
-    echo ""
-
-    echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
-    echo -e "  kernel:   ${Y}$(uname -r)${R}"
-    echo -e "  hostname: ${Y}$(hostname)${R}"
-    echo "  user:     $(id -un) (uid=$(id -u))"
-    echo ""
-
-    echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
-    namespaces=$(sudo ip netns list | grep {{prj}} | sort || true)
-    if [[ -z "$namespaces" ]]; then
-        echo -e "  ${Y}Lab is not running.${R} Run: just up"
-        echo ""
-        exit 0
-    fi
-
-    for ns in $namespaces; do
-        echo -e "${C}  $ns ${R}"
-        fmt='.[] | "     \(.ifindex) \(.ifname)\t\(.operstate)\t\([.addr_info[]? | select(.family=="inet") | .local] | join(" "))"'
-        sudo ip netns exec "$ns" ip -j addr | jq -r "$fmt"
-    done
-    echo ""
-
-    echo -e "${G}═════════════════════  WG HANDSHAKES  ══════════════════════════${R}"
-    echo -n "    cli: "; sudo ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
-    echo -n "    vpn: "; sudo ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
-
-###################################################
-# Lab lifecycle
-###################################################
-
+# For lazy
 root:
     sudo -Es
+
+###################################################
+# Lab demo
+###################################################
+
+# Full demo: up + status + ping
+demo:
+    @just reload
+    @just status
+    @just ping brief
+
+###################################################
+# Lifecycle
+###################################################
 
 # Bring up the lab
 up:
@@ -149,18 +128,7 @@ down mode="verbose":
 # Tear down and bring back up
 reload: (down "quiet") up
 
-
-###################################################
-# Demo
-###################################################
-
-# Full demo: up + status + ping
-demo:
-    @just reload
-    @just status
-    @just ping brief
-
-# Run lab in VM (needs: `usermod -aG kvm $USER`)
+# Run lab in VM (usermod -aG kvm $USER)
 kernel ver="v7.0.1":
     vng -r {{ver}} --name {{prj}} --ssh
 
@@ -168,6 +136,62 @@ kernel ver="v7.0.1":
 kernel-ssh:
     vng --name {{prj}} --ssh-client
 
+
+###################################################
+# Lab
+###################################################
+
+# Enter machine or run command
+enter machine *ARGS:
+    #!/usr/bin/env bash
+    case "{{machine}}" in
+        vpn) ns="{{vpn_ns}}" ;;
+        cli) ns="{{cli_ns}}" ;;
+        web) ns="{{web_ns}}" ;;
+        *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
+    esac
+    if [[ -z "{{ARGS}}" ]]; then
+        sudo HOME="$HOME" ip netns exec "$ns" unshare --uts bash -c \
+            'hostname {{machine}}; exec bash --rcfile <(echo "HISTFILE=/tmp/{{prj}}-{{machine}}.history; PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
+    else
+        sudo ip netns exec "$ns" {{ARGS}}
+    fi
+
+# Topology + live lab state
+status:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
+
+    echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════${R}"
+    echo -e "${D}"
+    sed -n '/^# <topology>/,/^# <\/topology>/{//d; s/^# \?//; p}' justfile
+    echo -e "${R}"
+
+    echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
+    echo -e "  kernel:   ${Y}$(uname -r)${R}"
+    echo -e "  hostname: ${Y}$(hostname)${R}"
+    echo "  user:     $(id -un) (uid=$(id -u))"
+    echo ""
+
+    echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
+    namespaces=$(sudo ip netns list | grep {{prj}} | sort || true)
+    if [[ -z "$namespaces" ]]; then
+        echo -e "  ${Y}Lab is not running.${R} Run: just up"
+        echo ""
+        exit 0
+    fi
+
+    for ns in $namespaces; do
+        echo -e "${C}  $ns ${R}"
+        fmt='.[] | "     \(.ifindex) \(.ifname)\t\(.operstate)\t\([.addr_info[]? | select(.family=="inet") | .local] | join(" "))"'
+        sudo ip netns exec "$ns" ip -j addr | jq -r "$fmt"
+    done
+    echo ""
+
+    echo -e "${G}═════════════════════  WG HANDSHAKES  ══════════════════════════${R}"
+    echo -n "    cli: "; sudo ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
+    echo -n "    vpn: "; sudo ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
 
 # Ping connectivity checks
 ping mode="verbose" count="3":
@@ -202,21 +226,4 @@ ping mode="verbose" count="3":
     check "cli --> vpn (tunnel) --> web" {{web_ip}}        5
     if [[ "{{mode}}" != "brief" ]]; then
         echo -e "* ${G}OK${R}"
-    fi
-
-
-# Enter machine or run command
-enter machine *ARGS:
-    #!/usr/bin/env bash
-    case "{{machine}}" in
-        vpn) ns="{{vpn_ns}}" ;;
-        cli) ns="{{cli_ns}}" ;;
-        web) ns="{{web_ns}}" ;;
-        *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
-    esac
-    if [[ -z "{{ARGS}}" ]]; then
-        sudo HOME="$HOME" ip netns exec "$ns" unshare --uts bash -c \
-            'hostname {{machine}}; exec bash --rcfile <(echo "HISTFILE=/tmp/{{prj}}-{{machine}}.history; PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
-    else
-        sudo ip netns exec "$ns" {{ARGS}}
     fi
