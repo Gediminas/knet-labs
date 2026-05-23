@@ -19,21 +19,17 @@ vpn_pub := "SVpc9mmL3ib8eUzUWFYMDxVwChNXB9THylpBH2BEAmM="
 cli_key := "qFNHSpC/v76GwH4y4IljpeoqheXzRZrT40d9Izeo7HQ="
 cli_pub := "9/8FW+6zaxl774NmCk+m6470/cF9w7H4pzsQLfprjTM="
 
-ip  := `dirname $(which ip)`
-jst := `which just`
-
-default:
+help:
     @just --list
 
-###################################################
-# Demo
-###################################################
-
-# Show network topology diagram
-topo:
+# Topology + live lab state
+status:
     #!/usr/bin/env bash
-    C='\033[1;36m' Y='\033[1;33m' R='\033[0m'
-    echo -e "${C}"
+    set -euo pipefail
+    G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
+
+    echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════${R}"
+    echo -e "${D}"
     echo '    cli  10.5.5.101   10.5.0.1  vpn                      web'
     echo ' ┌─────────┐             ┌───────────────┐            ┌────────┐'
     echo ' │ ── wg0 -│---tunnel----│- wg0 ────┐    │            │        │'
@@ -41,127 +37,11 @@ topo:
     echo ' │   eth0 ═╪══ netkit ═══╪═ eth0   eth1 ─┼───netkit───┼─ nk0   │'
     echo ' └─────────┘             └───────────────┘            └────────┘'
     echo ' 192.168.111.101    192.168.111.1 / 192.168.222.1  192.168.222.2'
-    echo -e ""
-    echo -e "   --- plain packets (inside tunnel)"
-    echo -e "   ─── plain packets"
-    echo -e "   ═══ encrypted packets${R}"
-
-# Demo: Run full demo (up + topology + context + visual ping)
-demo:
-    #!/usr/bin/env bash
-    [[ $EUID -ne 0 ]] && exec sudo -Es just demo
-    just reload
-    just topo
+    echo ''
+    echo '   --- plain packets (inside tunnel)'
+    echo '   ─── plain packets'
+    echo -e '   ═══ encrypted packets'"${R}"
     echo ""
-    just ctx
-    echo ""
-    just check
-
-# Run lab in VM with specified kernel
-# Run lab in VM with SSH access (connect from another terminal with: just kernel-ssh)
-kernel ver="v7.0.1":
-    #!/usr/bin/env bash
-    [[ $EUID -ne 0 ]] && exec sudo -Es just kernel {{ver}}
-    vng -r {{ver}} --name {{prj}} --ssh
-    # vng -r {{ver}} --name {{prj}} --console
-
-# Connect to running VM (started with: just kernel)
-kernel-ssh:
-    #!/usr/bin/env bash
-    [[ $EUID -ne 0 ]] && exec sudo -Es just kernel-ssh
-    vng --name {{prj}} --ssh-client
-    # vng --name {{prj}} --console-client
-
-root:
-    sudo -Es
-
-###################################################
-# Lab lifecycle
-###################################################
-
-# Lab: Bring up the lab (3 namespaces, direct netkit, WireGuard)
-up:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [[ $EUID -ne 0 ]] && exec sudo -Es just up
-
-    if ip netns list | grep -q {{prj}}; then
-        echo "Lab already running. Run: just reload" && exit 1
-    fi
-
-    # ── namespaces ─────────────────────────────────
-    ip netns add {{cli_ns}}
-    ip netns add {{vpn_ns}}
-    ip netns add {{web_ns}}
-
-    ip netns exec {{cli_ns}} ip link set lo up
-    ip netns exec {{vpn_ns}} ip link set lo up
-    ip netns exec {{web_ns}} ip link set lo up
-
-    # ── netkit: cli ↔ vpn ──────────────────────────
-    ip netns exec {{vpn_ns}} ip link add eth0 type netkit mode l2 peer name nk-cli
-    ip netns exec {{vpn_ns}} ip link set nk-cli netns {{cli_ns}}
-    ip netns exec {{cli_ns}} ip link set nk-cli name eth0
-    ip netns exec {{vpn_ns}} ip addr add {{vpn_inner_ip}}/24 dev eth0
-    ip netns exec {{vpn_ns}} ip link set eth0 up
-    ip netns exec {{cli_ns}} ip addr add {{cli_ip}}/24 dev eth0
-    ip netns exec {{cli_ns}} ip link set eth0 up
-
-    # ── netkit: vpn ↔ web ──────────────────────────
-    ip netns exec {{vpn_ns}} ip link add eth1 type netkit mode l2 peer name nk0
-    ip netns exec {{vpn_ns}} ip link set nk0 netns {{web_ns}}
-    ip netns exec {{vpn_ns}} ip addr add {{vpn_outter_ip}}/24 dev eth1
-    ip netns exec {{vpn_ns}} ip link set eth1 up
-    ip netns exec {{web_ns}} ip addr add {{web_ip}}/24 dev nk0
-    ip netns exec {{web_ns}} ip link set nk0 up
-
-    # ── WireGuard: vpn (server) ────────────────────
-    ip netns exec {{vpn_ns}} ip link add wg0 type wireguard
-    ip netns exec {{vpn_ns}} ip addr add {{vpn_wg}}/16 dev wg0
-    echo '{{vpn_key}}' | ip netns exec {{vpn_ns}} wg set wg0 \
-        listen-port 51820 private-key /dev/stdin
-    ip netns exec {{vpn_ns}} wg set wg0 peer {{cli_pub}} allowed-ips {{cli_wg}}/32
-    ip netns exec {{vpn_ns}} ip link set wg0 up
-
-    # ── WireGuard: cli (client) ────────────────────
-    ip netns exec {{cli_ns}} ip link add wg0 type wireguard
-    ip netns exec {{cli_ns}} ip addr add {{cli_wg}}/16 dev wg0
-    echo '{{cli_key}}' | ip netns exec {{cli_ns}} wg set wg0 \
-        private-key /dev/stdin \
-        peer {{vpn_pub}} \
-            endpoint {{vpn_inner_ip}}:51820 \
-            allowed-ips 0.0.0.0/0 \
-            persistent-keepalive 25
-    ip netns exec {{cli_ns}} ip link set wg0 up
-
-    # ── routing ────────────────────────────────────
-    ip netns exec {{cli_ns}} ip route add {{web_ip}} via {{vpn_wg}}
-    ip netns exec {{vpn_ns}} sysctl -qw net.ipv4.ip_forward=1
-    ip netns exec {{web_ns}} ip route add default via {{vpn_outter_ip}}
-
-    echo "* Lab is up."
-
-# Lab: Tear down
-down mode="verbose":
-    #!/usr/bin/env bash
-    [[ $EUID -ne 0 ]] && exec sudo -Es just down {{mode}}
-    ns=$(ip netns list | awk '/{{prj}}/{print $1}')
-    if [ -z "$ns" ]; then
-        [[ "{{mode}}" != "quiet" ]] && echo "Nothing to tear down."
-        exit 0
-    fi
-    echo "$ns" | xargs -rn1 ip netns del
-    echo "* Lab torn down."
-
-# Lab: Tear down and bring back up
-reload: (down "quiet") up
-
-
-# Show host and lab context
-ctx:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' R='\033[0m'
 
     echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
     echo -e "  kernel:   ${Y}$(uname -r)${R}"
@@ -170,66 +50,177 @@ ctx:
     echo ""
 
     echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
-    namespaces=$(ip netns list | grep {{prj}} | sort || true)
-    [[ "$namespaces" == "" ]] && echo -e "<none>\n" && exit 0
-    # echo -e "$namespaces\n"
+    namespaces=$(sudo ip netns list | grep {{prj}} | sort || true)
+    if [[ -z "$namespaces" ]]; then
+        echo -e "  ${Y}Lab is not running.${R} Run: just up"
+        echo ""
+        exit 0
+    fi
 
     for ns in $namespaces; do
         echo -e "${C}  $ns ${R}"
         fmt='.[] | "     \(.ifindex) \(.ifname)\t\(.operstate)\t\([.addr_info[]? | select(.family=="inet") | .local] | join(" "))"'
-        ip netns exec "$ns" ip -j addr | jq -r "$fmt"
+        sudo ip netns exec "$ns" ip -j addr | jq -r "$fmt"
     done
     echo ""
 
     echo -e "${G}═════════════════════  WG HANDSHAKES  ══════════════════════════${R}"
-    echo -n "    cli: "; ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
-    echo -n "    vpn: "; ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
+    echo -n "    cli: "; sudo ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
+    echo -n "    vpn: "; sudo ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
 
-# Visual ping: cli → vpn (underlay) → vpn (tunnel) → web (through tunnel)
-check count="3":
+###################################################
+# Lab lifecycle
+###################################################
+
+# Bring up the lab
+up:
     #!/usr/bin/env bash
     set -euo pipefail
-    G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' R='\033[0m'
-    run() { echo -e "${G}▶▶▶ $1${R}"; shift; "$@"; echo; }
+    sudo -v
 
-    echo -e "${G}════════════════════════  CHECK  ═══════════════════════════════${R}"
-    run "client --> vpn (underlay {{vpn_inner_ip}})"
-    echo -ne "  ${Y}ROUTE:${R} "
-    ip netns exec {{cli_ns}} ip route get {{vpn_inner_ip}} | head -n1
-    echo -ne "  ${Y}PING:${R} "
-    ip netns exec {{cli_ns}} ping -q -c{{count}} -W1 {{vpn_inner_ip}}
-    echo ""
+    if sudo ip netns list | grep -q {{prj}}; then
+        echo "Lab already running. Run: just reload" && exit 1
+    fi
 
-    run "client --> vpn (tunnel {{vpn_wg}})"
-    echo -ne "  ${Y}ROUTE:${R} "
-    ip netns exec {{cli_ns}} ip route get {{vpn_wg}} | head -n1
-    echo -ne "  ${Y}PING:${R} "
-    ip netns exec {{cli_ns}} ping -q -c{{count}} -W1 {{vpn_wg}}
-    echo ""
+    # ── namespaces ─────────────────────────────────
+    sudo ip netns add {{cli_ns}}
+    sudo ip netns add {{vpn_ns}}
+    sudo ip netns add {{web_ns}}
 
-    run "client --> web (through tunnel {{web_ip}})"
-    echo -ne "  ${Y}ROUTE:${R} "
-    ip netns exec {{cli_ns}} ip route get {{web_ip}} | head -n1
-    echo -ne "  ${Y}PING:${R} "
-    ip netns exec {{cli_ns}} ping -q -c{{count}} -W5 {{web_ip}}
-    echo ""
+    sudo ip netns exec {{cli_ns}} ip link set lo up
+    sudo ip netns exec {{vpn_ns}} ip link set lo up
+    sudo ip netns exec {{web_ns}} ip link set lo up
 
-    echo "* Lab check is OK"
+    # ── netkit: cli ↔ vpn ──────────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add eth0 type netkit mode l2 peer name nk-cli
+    sudo ip netns exec {{vpn_ns}} ip link set nk-cli netns {{cli_ns}}
+    sudo ip netns exec {{cli_ns}} ip link set nk-cli name eth0
+    sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_inner_ip}}/24 dev eth0
+    sudo ip netns exec {{vpn_ns}} ip link set eth0 up
+    sudo ip netns exec {{cli_ns}} ip addr add {{cli_ip}}/24 dev eth0
+    sudo ip netns exec {{cli_ns}} ip link set eth0 up
+
+    # ── netkit: vpn ↔ web ──────────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add eth1 type netkit mode l2 peer name nk0
+    sudo ip netns exec {{vpn_ns}} ip link set nk0 netns {{web_ns}}
+    sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_outter_ip}}/24 dev eth1
+    sudo ip netns exec {{vpn_ns}} ip link set eth1 up
+    sudo ip netns exec {{web_ns}} ip addr add {{web_ip}}/24 dev nk0
+    sudo ip netns exec {{web_ns}} ip link set nk0 up
+
+    # ── WireGuard: vpn (server) ────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add wg0 type wireguard
+    sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_wg}}/16 dev wg0
+    echo '{{vpn_key}}' | sudo ip netns exec {{vpn_ns}} wg set wg0 \
+        listen-port 51820 private-key /dev/stdin
+    sudo ip netns exec {{vpn_ns}} wg set wg0 peer {{cli_pub}} allowed-ips {{cli_wg}}/32
+    sudo ip netns exec {{vpn_ns}} ip link set wg0 up
+
+    # ── WireGuard: cli (client) ────────────────────
+    sudo ip netns exec {{cli_ns}} ip link add wg0 type wireguard
+    sudo ip netns exec {{cli_ns}} ip addr add {{cli_wg}}/16 dev wg0
+    echo '{{cli_key}}' | sudo ip netns exec {{cli_ns}} wg set wg0 \
+        private-key /dev/stdin \
+        peer {{vpn_pub}} \
+            endpoint {{vpn_inner_ip}}:51820 \
+            allowed-ips 0.0.0.0/0 \
+            persistent-keepalive 25
+    sudo ip netns exec {{cli_ns}} ip link set wg0 up
+
+    # ── routing ────────────────────────────────────
+    sudo ip netns exec {{cli_ns}} ip route add {{web_ip}} via {{vpn_wg}}
+    sudo ip netns exec {{vpn_ns}} sysctl -qw net.ipv4.ip_forward=1
+    sudo ip netns exec {{web_ns}} ip route add default via {{vpn_outter_ip}}
+
+    echo "* Lab is up."
+
+# Tear down the lab
+down mode="verbose":
+    #!/usr/bin/env bash
+    sudo -v
+    ns=$(sudo ip netns list | awk '/{{prj}}/{print $1}')
+    [[ -z "$ns" ]] && { [[ "{{mode}}" != "quiet" ]] && echo "Nothing to tear down."; exit 0; }
+    echo "$ns" | xargs -rn1 sudo ip netns del
+    echo "* Lab torn down."
+
+# Tear down and bring back up
+reload: (down "quiet") up
 
 
-shell-cli: (_shell cli_ns)
-shell-vpn: (_shell vpn_ns)
-shell-web: (_shell web_ns)
+###################################################
+# Demo
+###################################################
 
-exec-cli *ARGS: (_exec cli_ns ARGS)
-exec-vpn *ARGS: (_exec vpn_ns ARGS)
-exec-web *ARGS: (_exec web_ns ARGS)
+# Full demo: up + status + ping
+demo:
+    @just reload
+    @just status
+    @just ping brief
+
+# Run lab in VM (needs: `usermod -aG kvm $USER`)
+kernel ver="v7.0.1":
+    vng -r {{ver}} --name {{prj}} --ssh
+
+# Connect to running VM
+kernel-ssh:
+    vng --name {{prj}} --ssh-client
 
 
-# Enter shell in namespace
-_shell ns:
-    @sudo PATH="$PATH" ip netns exec {{ns}} bash -c 'echo -n "Enter namespace: "; ip netns identify; exec bash'
+# Ping connectivity checks
+ping mode="verbose" count="3":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    G='\033[1;32m' C='\033[1;36m' Y='\033[0;33m' R='\033[0m'
 
-# Execute command in namespace
-_exec ns *ARGS:
-    @sudo PATH="$PATH" ip netns exec {{ns}} bash -c 'echo -n "Run in namespace: "; ip netns identify; bash -c "{{ARGS}}"'
+    check() {
+        local label="$1" ns="{{cli_ns}}" ip="$2" timeout="$3"
+        if [[ "{{mode}}" == "brief" ]]; then
+            if sudo ip netns exec "$ns" ping -q -c1 -W"$timeout" "$ip" &>/dev/null; then
+                avg=$(sudo ip netns exec "$ns" ping -q -c{{count}} -W"$timeout" "$ip" 2>/dev/null \
+                    | awk -F'/' '/^rtt/{printf "%.1fms", $5}')
+                echo -e "  $label  ${G}OK${R}  (${avg})"
+            else
+                echo -e "  $label  ${C}FAIL${R}"
+                return 1
+            fi
+        else
+            echo -e "${G}▶▶▶ $label${R}"
+            echo -ne "  ${Y}ROUTE:${R} "
+            sudo ip netns exec "$ns" ip route get "$ip" | head -n1
+            echo -ne "  ${Y}PING:${R} "
+            sudo ip netns exec "$ns" ping -c{{count}} -W"$timeout" "$ip"
+            echo ""
+        fi
+    }
+
+    echo -e "${G}═════════════════════════  PING  ═══════════════════════════════${R}"
+    check "cli --> vpn (underlay)      " {{vpn_inner_ip}} 1
+    check "cli --> vpn (tunnel)        " {{vpn_wg}}       1
+    check "cli --> vpn (tunnel) --> web" {{web_ip}}        5
+    if [[ "{{mode}}" != "brief" ]]; then
+        echo -e "* ${G}OK${R}"
+    fi
+
+
+# Shell into machine
+enter machine:
+    #!/usr/bin/env bash
+    case "{{machine}}" in
+        vpn) ns="{{vpn_ns}}" ;;
+        cli) ns="{{cli_ns}}" ;;
+        web) ns="{{web_ns}}" ;;
+        *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
+    esac
+    sudo ip netns exec "$ns" unshare --uts bash -c \
+        'hostname {{machine}}; exec bash --rcfile <(echo "PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
+
+# Run command in machine
+exec machine *ARGS:
+    #!/usr/bin/env bash
+    case "{{machine}}" in
+        vpn) ns="{{vpn_ns}}" ;;
+        cli) ns="{{cli_ns}}" ;;
+        web) ns="{{web_ns}}" ;;
+        *)   echo "Unknown: {{machine}} (try: vpn, cli, web)"; exit 1 ;;
+    esac
+    sudo ip netns exec "$ns" {{ARGS}}
