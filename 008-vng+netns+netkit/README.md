@@ -1,76 +1,64 @@
-# virtme-ng + netns + netkit
+# virtme-ng + netns + netkit + WireGuard
 
 Network namespaces + netkit links + WireGuard tunnel — runnable on any kernel via [virtme-ng](https://github.com/arighi/virtme-ng).
 
 ```
-     cli                         vpn                     web
-  ┌────────┐               ┌──────────────┐          ┌─────────┐
-  │   wg0 ─│----tunnel-----│─ wg0   eth1 ─┼──netkit──┼─ nk0    │
-  │    |   │               │   |          │          │         │
-  │  eth0 ═╪═══ netkit ════╪═ eth0        │          │         │
-  └────────┘               └──────────────┘          └─────────┘
+    cli  10.5.5.101   10.5.0.1  vpn                      web
+ ┌─────────┐             ┌───────────────┐            ┌────────┐
+ │ ── wg0 -│---tunnel----│- wg0 ────┐    │            │        │
+ │     ↕   │             │   ↕      │    │            │        │
+ │   eth0 ═╪══ netkit ═══╪═ eth0   eth1 ─┼───netkit───┼─ nk0   │
+ └─────────┘             └───────────────┘            └────────┘
+ 192.168.111.101   192.168.111.1 / 192.168.222.1  192.168.222.80
 
-  ---: plain packets (inside tunnel)
-  ───: plain packets
-  ═══: encrypted packets
-```
-```sh
-ip netns list
-# k008-web
-# k008-vpn
-# k008-cli
+   --- plain packets (inside tunnel)
+   ─── plain packets
+   ═══ encrypted packets
 ```
 
 [Requirements](../#Requirements)
 
-## Run from host
+## Quick start (host kernel)
 
 ```sh
+just demo           # up + status + ping checks
+just enter vpn      # interactive shell (vpn:~#)
+just enter cli      # open in another terminal
+```
+
+## Run in VM (custom kernel)
+
+```sh
+# Terminal 1 — boot VM
+just kernel v7.0.1          # needs kvm group (usermod -aG kvm $USER)
+
+# Inside the VM:
 just demo
+just enter vpn
+
+# Terminal 2 — additional shell into the same VM
+just kernel-ssh
+just enter cli
 ```
 
-## Run in VM (specific kernel)
+## Enter machines
 
 ```sh
-# Boot kernel v7.0.1 in virtme-ng
-just kernel v7.0.1
+just enter vpn                       # interactive shell
+just enter cli                       # interactive shell
+just enter web                       # interactive shell
 
-# Inside the VM
-uname -a
-just demo
+just enter cli ping 192.168.222.80   # run single command
+just enter vpn tcpdump -i eth0 -nl   # capture traffic
+just enter vpn wg show               # inspect WireGuard
 ```
 
-## Explore the lab
+## Lab lifecycle
 
 ```sh
-# Enter VPN namespace
-just shell-vpn
-ip netns identify
-ip address
-wg show
-exit
-
-# Enter cliet namespace
-just shell-cli
-ip netns identify
-wg show
-ip address
-ip route get 192.168.200.2
-ping -c3 192.168.200.2   # cli → web through tunnel
-exit
+just up             # create namespaces, links, WireGuard, routes
+just down           # tear down
+just reload         # down + up
+just status         # topology + live state
+just ping           # verbose connectivity checks
 ```
-
-## Demo
-
-```sh
-# Terminal-1
-[just kernel v7.0.1] # any kernel 6.7+
-just demo
-just exec-vpn RUST_LOG="poc=debug" ./wg_trace_bpf
-just exec-vpn ./wg_trace_ebpf
-
-# Terminal-2
-[just kernel-ssh]
-ip netns exec k008-cli ping 192.168.222.2
-```
-
