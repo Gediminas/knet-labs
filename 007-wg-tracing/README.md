@@ -20,28 +20,24 @@ Network namespaces + netkit/veth links + WireGuard tunnel + eBPF tracing via Rus
 
 [Requirements](../#Requirements)
 
-## Quick start (host kernel)
+## Quick start
 
 ```sh
-just demo           # up + status + ping checks (netkit, kernel >= 6.7)
-just link=veth demo # same, using veth pairs (older kernels)
-just enter vpn      # interactive shell (vpn:~#)
-just enter cli      # open in another terminal
+# Terminal 1
+just build
+just up     # `just [link=veth] up` for older kernels
+just status # Optional
+just enter vpn ./target/x86_64-unknown-linux-musl/debug/poc
+
+# Terminal 2
+just enter cli ping 192.168.222.80 -c 3
 ```
 
 ## Run in VM (custom kernel)
 
 ```sh
-# Terminal 1 — boot VM
-just kernel v7.0.1          # needs kvm group (usermod -aG kvm $USER)
-
-# Inside the VM:
-just demo
-just enter vpn
-
-# Terminal 2 — additional shell into the same VM
-just kernel-ssh
-just enter cli
+just kernel v7.0.1    # Terminal 1 — boot VM (needs kvm group: `usermod -aG kvm $USER`)
+just kernel-ssh       # Terminal 2 — connect to running VM
 ```
 
 ## Enter machines

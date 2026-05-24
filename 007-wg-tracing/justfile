@@ -40,16 +40,6 @@ root:
     sudo -Es
 
 ###################################################
-# Lab demo
-###################################################
-
-# Full demo: up + status + ping
-demo: reload
-    @sleep 1 # Required for br0 to go up
-    @just status
-    @just ping brief
-
-###################################################
 # Lifecycle
 ###################################################
 
@@ -252,6 +242,12 @@ ping mode="verbose" count="3":
 ###################################################
 # Dev (eBPF tracing)
 ###################################################
+
+build:
+    cargo build
+
+run:
+    cargo run
 
 # Watch + build
 dev-build:
