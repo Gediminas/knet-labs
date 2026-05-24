@@ -4,18 +4,17 @@ Network namespaces + netkit/veth links + WireGuard tunnel — runnable on any ke
 
 <!-- topology -->
 ```
-    cli  10.5.5.101   10.5.0.1  vpn                      web
- ┌─────────┐             ┌───────────────┐            ┌────────┐
- │ ── wg0 -│---tunnel----│- wg0 ────┐    │            │        │
- │     ↕   │             │   ↕      │    │            │        │
- │   eth0 ═╪══ netkit ═══╪═ eth0   eth1 ─┼───netkit───┼─ nk0   │
- └─────────┘             └───────────────┘            └────────┘
- 192.168.111.101   192.168.111.1 / 192.168.222.1  192.168.222.80
+    cli  10.5.5.101        10.5.0.1  vpn                           web
+ ┌─────────┐                  ┌───────────────┐                   ┌────────┐
+ │ ── wg0 -│------tunnel------│- wg0 ────┐    │                   │        │
+ │     ↕   │                  │   ↕      │    │                   │        │
+ │   eth0 ═╪══ netkit/veth ═══╪═ eth0   eth1 ─┼─── netkit/veth ───┼─ nk0   │
+ └─────────┘                  └───────────────┘                   └────────┘
+ 192.168.111.101        192.168.111.1 / 192.168.222.1         192.168.222.80
 
    --- plain packets (inside tunnel)
    ─── plain packets
    ═══ encrypted packets
-   netkit — L2 link between namespaces (veth on older kernels)
 ```
 <!-- /topology -->
 

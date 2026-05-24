@@ -152,23 +152,25 @@ status:
     set -euo pipefail
     G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
 
+    lnk=""
+    if sudo ip netns list | grep -q {{prj}}; then
+        lnk=$(sudo ip netns exec {{vpn_ns}} ip -j -d link show eth0 | jq -r '.[0].linkinfo.info_kind')
+    fi
+
     echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════${R}"
     echo -e "${D}"
-    topo=$(sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md)
-    [[ "{{link}}" == "veth" ]] && topo=$(echo "$topo" | sed 's/ netkit /═ veth ═/; s/netkit/ veth /')
-    echo "$topo"
+    if [[ -n "$lnk" ]]; then
+        sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md \
+            | sed "s/$lnk/\x1b[0m\x1b[1;33m$lnk\x1b[0m\x1b[2m/g"
+    else
+        sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md
+    fi
     echo -e "${R}"
 
     echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
     echo -e "  kernel:   ${Y}$(uname -r)${R}"
     echo -e "  hostname: ${Y}$(hostname)${R}"
-    echo -e "  link:     ${Y}{{link_type}}${R}"
-    # if sudo ip netns list | grep -q {{prj}}; then
-    #     actual=$(sudo ip netns exec {{vpn_ns}} ip -d -j link show eth0 \
-    #         | jq -r '.[0] | .linkinfo.info_kind + (if .linkinfo.info_data.mode then " mode " + .linkinfo.info_data.mode else "" end)')
-    #     echo -e "  actual:   ${D}${actual}${R}"
-    # fi
-    # echo "  user:     $(id -un) (uid=$(id -u))"
+    [[ -n "$lnk" ]] && echo -e "  link:     ${Y}${lnk}${R}"
     echo ""
 
     echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
