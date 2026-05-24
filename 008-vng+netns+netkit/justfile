@@ -19,6 +19,12 @@ vpn_pub := "SVpc9mmL3ib8eUzUWFYMDxVwChNXB9THylpBH2BEAmM="
 cli_key := "qFNHSpC/v76GwH4y4IljpeoqheXzRZrT40d9Izeo7HQ="
 cli_pub := "9/8FW+6zaxl774NmCk+m6470/cF9w7H4pzsQLfprjTM="
 
+# Link type: "netkit" (kernel >= 6.7) or "veth" (older kernels)
+link      := "netkit"
+link_type := if link == "netkit" { "netkit mode l2" } \
+             else if link == "veth" { "veth" } \
+             else { error("unknown link type: " + link) }
+
 help:
     @just --list
 
@@ -31,10 +37,7 @@ root:
 ###################################################
 
 # Full demo: up + status + ping
-demo:
-    @just reload
-    @just status
-    @just ping brief
+demo: reload status (ping "brief")
 
 ###################################################
 # Lifecycle
@@ -59,8 +62,8 @@ up:
     sudo ip netns exec {{vpn_ns}} ip link set lo up
     sudo ip netns exec {{web_ns}} ip link set lo up
 
-    # ── netkit: cli ↔ vpn ──────────────────────────
-    sudo ip netns exec {{vpn_ns}} ip link add eth0 type netkit mode l2 peer name nk-cli
+    # ── link: cli ↔ vpn ──────────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add eth0 type {{link_type}} peer name nk-cli
     sudo ip netns exec {{vpn_ns}} ip link set nk-cli netns {{cli_ns}}
     sudo ip netns exec {{cli_ns}} ip link set nk-cli name eth0
     sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_inner_ip}}/24 dev eth0
@@ -68,8 +71,8 @@ up:
     sudo ip netns exec {{cli_ns}} ip addr add {{cli_ip}}/24 dev eth0
     sudo ip netns exec {{cli_ns}} ip link set eth0 up
 
-    # ── netkit: vpn ↔ web ──────────────────────────
-    sudo ip netns exec {{vpn_ns}} ip link add eth1 type netkit mode l2 peer name nk0
+    # ── link: vpn ↔ web ──────────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add eth1 type {{link_type}} peer name nk0
     sudo ip netns exec {{vpn_ns}} ip link set nk0 netns {{web_ns}}
     sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_outter_ip}}/24 dev eth1
     sudo ip netns exec {{vpn_ns}} ip link set eth1 up
@@ -151,12 +154,20 @@ status:
 
     echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════${R}"
     echo -e "${D}"
-    sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md
+    topo=$(sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md)
+    [[ "{{link}}" == "veth" ]] && topo=$(echo "$topo" | sed 's/ netkit /═ veth ═/; s/netkit/ veth /')
+    echo "$topo"
     echo -e "${R}"
 
     echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
     echo -e "  kernel:   ${Y}$(uname -r)${R}"
     echo -e "  hostname: ${Y}$(hostname)${R}"
+    echo -e "  link:     ${Y}{{link_type}}${R}"
+    # if sudo ip netns list | grep -q {{prj}}; then
+    #     actual=$(sudo ip netns exec {{vpn_ns}} ip -d -j link show eth0 \
+    #         | jq -r '.[0] | .linkinfo.info_kind + (if .linkinfo.info_data.mode then " mode " + .linkinfo.info_data.mode else "" end)')
+    #     echo -e "  actual:   ${D}${actual}${R}"
+    # fi
     # echo "  user:     $(id -un) (uid=$(id -u))"
     echo ""
 

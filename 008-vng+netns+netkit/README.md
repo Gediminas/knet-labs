@@ -1,6 +1,6 @@
 # virtme-ng + netns + netkit + WireGuard
 
-Network namespaces + netkit links + WireGuard tunnel — runnable on any kernel via [virtme-ng](https://github.com/arighi/virtme-ng).
+Network namespaces + netkit/veth links + WireGuard tunnel — runnable on any kernel via [virtme-ng](https://github.com/arighi/virtme-ng).
 
 <!-- topology -->
 ```
@@ -15,6 +15,7 @@ Network namespaces + netkit links + WireGuard tunnel — runnable on any kernel 
    --- plain packets (inside tunnel)
    ─── plain packets
    ═══ encrypted packets
+   netkit — L2 link between namespaces (veth on older kernels)
 ```
 <!-- /topology -->
 
@@ -23,7 +24,8 @@ Network namespaces + netkit links + WireGuard tunnel — runnable on any kernel 
 ## Quick start (host kernel)
 
 ```sh
-just demo           # up + status + ping checks
+just demo           # up + status + ping checks (netkit, kernel >= 6.7)
+just link=veth demo # same, using veth pairs (older kernels)
 just enter vpn      # interactive shell (vpn:~#)
 just enter cli      # open in another terminal
 ```
