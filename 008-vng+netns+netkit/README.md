@@ -2,6 +2,7 @@
 
 Network namespaces + netkit links + WireGuard tunnel — runnable on any kernel via [virtme-ng](https://github.com/arighi/virtme-ng).
 
+<!-- topology -->
 ```
     cli  10.5.5.101   10.5.0.1  vpn                      web
  ┌─────────┐             ┌───────────────┐            ┌────────┐
@@ -15,6 +16,7 @@ Network namespaces + netkit links + WireGuard tunnel — runnable on any kernel 
    ─── plain packets
    ═══ encrypted packets
 ```
+<!-- /topology -->
 
 [Requirements](../#Requirements)
 

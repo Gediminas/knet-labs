@@ -1,18 +1,4 @@
 #!/usr/bin/env just --justfile
-#
-# <topology>
-#      cli                    net/L2                         vpn                     web
-#   ┌────────┐          ┌─────────────────────────┐    ┌──────────────┐          ┌─────────┐
-#   │   wg0 -│----------│----------tunnel---------│----│- wg0 ─ eth1 ─┼──netkit──┼─ eth0   │
-#   │    |   │          │                         │    │   |          │          │         │
-#   │  eth0 ═╪══netkit══╪═ nk-cli ═ br0 ═ nk-vpn ═╪════╪═ eth0        │          │         │
-#   └────────┘          └─────────────────────────┘    └──────────────┘          └─────────┘
-#  192.168.111.101              192.168.111.254    192.168.111.1 / 192.168.200.1  192.168.200.80
-#
-#   --- plain packets (inside tunnel)
-#   ─── plain packets
-#   ═══ encrypted packets
-# </topology>
 
 prj     := "k007"
 vpn_ns  := prj + "-vpn"
@@ -24,8 +10,8 @@ cli_ip        := "192.168.111.101"
 net_br        := "192.168.111.254"
 vpn_inner_ip  := "192.168.111.1"
 
-vpn_outter_ip := "192.168.200.1"
-web_ip        := "192.168.200.80"
+vpn_outter_ip := "192.168.222.1"
+web_ip        := "192.168.222.80"
 
 vpn_wg        := "10.5.0.1"
 cli_wg        := "10.5.5.101"
@@ -184,18 +170,18 @@ status:
     set -euo pipefail
     G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
 
-    echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════════════════════${R}"
+    echo -e "${G}═══════════════════════  TOPOLOGY  ════════════════════════════════════════════${R}"
     echo -e "${D}"
-    sed -n '/^# <topology>/,/^# <\/topology>/{//d; s/^# \?//; p}' justfile
+    sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md
     echo -e "${R}"
 
-    echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════════════════════${R}"
+    echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
     echo -e "  kernel:   ${Y}$(uname -r)${R}"
     echo -e "  hostname: ${Y}$(hostname)${R}"
-    echo "  user:     $(id -un) (uid=$(id -u))"
+    # echo "  user:     $(id -un) (uid=$(id -u))"
     echo ""
 
-    echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════════════════════${R}"
+    echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
     namespaces=$(sudo ip netns list | grep {{prj}} | sort || true)
     if [[ -z "$namespaces" ]]; then
         echo -e "  ${Y}Lab is not running.${R} Run: just up"
@@ -210,7 +196,7 @@ status:
     done
     echo ""
 
-    echo -e "${G}═════════════════════  WG HANDSHAKES  ═════════════════════════════════════════${R}"
+    echo -e "${G}═════════════════════  WG HANDSHAKES  ══════════════════════════${R}"
     echo -n "    cli: "; sudo ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
     echo -n "    vpn: "; sudo ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
 

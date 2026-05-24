@@ -2,19 +2,21 @@
 
 Network namespaces + netkit links + WireGuard tunnel + eBPF tracing via Rust/Aya.
 
+<!-- topology -->
 ```
-     cli                    net/L2                         vpn                     web
-  ┌────────┐          ┌─────────────────────────┐    ┌──────────────┐          ┌─────────┐
-  │   wg0 -│----------│----------tunnel---------│----│- wg0 ─ eth1 ─┼──netkit──┼─ eth0   │
-  │    |   │          │                         │    │   |          │          │         │
-  │  eth0 ═╪══netkit══╪═ nk-cli ═ br0 ═ nk-vpn ═╪════╪═ eth0        │          │         │
-  └────────┘          └─────────────────────────┘    └──────────────┘          └─────────┘
- 192.168.111.101              192.168.111.254    192.168.111.1 / 192.168.200.1  192.168.200.80
+    cli                 net/L2                        vpn                web
+┌─────────┐      ┌─────────────────────────┐   ┌──────────────┐      ┌────────┐
+│ ── wg0 -│------│---------tunnel----------│---│- wg0 ────┐   │      │        │
+│     |   │      │                         │   │   |      │   │      │        │
+│   eth0 ═╪══nk══╪═ nk-cli ═ br0 ═ nk-vpn ═╪═══╪═ eth0  eth1 ─┼──nk──┼─ nk0   │
+└─────────┘      └─────────────────────────┘   └──────────────┘      └────────┘
+192.168.111.101        192.168.111.254         .111.1 / .200.1   192.168.200.80
 
-   --- plain packets (inside tunnel)
-   ─── plain packets
-   ═══ encrypted packets
+--- plain (in tunnel)
+─── plain
+═══ encrypted
 ```
+<!-- /topology -->
 
 [Requirements](../#Requirements)
 

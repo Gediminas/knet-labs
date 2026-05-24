@@ -1,18 +1,4 @@
 #!/usr/bin/env just --justfile
-#
-# <topology>
-#     cli  10.5.5.101   10.5.0.1  vpn                      web
-#  ┌─────────┐             ┌───────────────┐            ┌────────┐
-#  │ ── wg0 -│---tunnel----│- wg0 ────┐    │            │        │
-#  │     ↕   │             │   ↕      │    │            │        │
-#  │   eth0 ═╪══ netkit ═══╪═ eth0   eth1 ─┼───netkit───┼─ nk0   │
-#  └─────────┘             └───────────────┘            └────────┘
-#  192.168.111.101   192.168.111.1 / 192.168.222.1  192.168.222.80
-#
-#    --- plain packets (inside tunnel)
-#    ─── plain packets
-#    ═══ encrypted packets
-# </topology>
 
 prj     := "k008"
 vpn_ns  := prj + "-vpn"
@@ -165,13 +151,13 @@ status:
 
     echo -e "${G}═══════════════════════  TOPOLOGY  ═════════════════════════════${R}"
     echo -e "${D}"
-    sed -n '/^# <topology>/,/^# <\/topology>/{//d; s/^# \?//; p}' justfile
+    sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md
     echo -e "${R}"
 
     echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
     echo -e "  kernel:   ${Y}$(uname -r)${R}"
     echo -e "  hostname: ${Y}$(hostname)${R}"
-    echo "  user:     $(id -un) (uid=$(id -u))"
+    # echo "  user:     $(id -un) (uid=$(id -u))"
     echo ""
 
     echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
