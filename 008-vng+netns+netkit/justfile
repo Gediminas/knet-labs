@@ -25,6 +25,8 @@ link_type := if link == "netkit" { "netkit mode l2" } \
              else if link == "veth" { "veth" } \
              else { error("unknown link type: " + link) }
 
+ping_interval := "0.05"
+
 help:
     @just --list
 
@@ -202,7 +204,7 @@ ping mode="verbose" count="3":
         local label="$1" ns="{{cli_ns}}" ip="$2" timeout="$3"
         if [[ "{{mode}}" == "brief" ]]; then
             if sudo ip netns exec "$ns" ping -q -c1 -W"$timeout" "$ip" &>/dev/null; then
-                avg=$(sudo ip netns exec "$ns" ping -q -c{{count}} -W"$timeout" "$ip" 2>/dev/null \
+                avg=$(sudo ip netns exec "$ns" ping -q -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip" 2>/dev/null \
                     | awk -F'/' '/^rtt/{printf "%.1fms", $5}')
                 echo -e "  $label  ${G}OK${R}  (${avg})"
             else
@@ -214,7 +216,7 @@ ping mode="verbose" count="3":
             echo -ne "  ${Y}ROUTE:${R} "
             sudo ip netns exec "$ns" ip route get "$ip" | head -n1
             echo -ne "  ${Y}PING:${R} "
-            sudo ip netns exec "$ns" ping -c{{count}} -W"$timeout" "$ip"
+            sudo ip netns exec "$ns" ping -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip"
             echo ""
         fi
     }
