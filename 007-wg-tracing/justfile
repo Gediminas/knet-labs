@@ -24,9 +24,18 @@ cli_pub := "9/8FW+6zaxl774NmCk+m6470/cF9w7H4pzsQLfprjTM="
 
 app := "target/x86_64-unknown-linux-musl/debug/poc"
 
+# Link type: "netkit" (kernel >= 6.7) or "veth" (older kernels)
+link      := "netkit"
+link_type := if link == "netkit" { "netkit mode l2" } \
+             else if link == "veth" { "veth" } \
+             else { error("unknown link type: " + link) }
+
+ping_interval := "0.05"
+
 help:
     @just --list
 
+# For lazy
 root:
     sudo -Es
 
@@ -35,8 +44,8 @@ root:
 ###################################################
 
 # Full demo: up + status + ping
-demo:
-    @just reload
+demo: reload
+    @sleep 1 # Required for br0 to go up
     @just status
     @just ping brief
 
@@ -68,20 +77,20 @@ up:
     # ── bridge: cli - net - vpn ────────────────────
     sudo ip netns exec {{net_ns}} ip link add br0 type bridge
 
-    # ── netkit: vpn ↔ net ──────────────────────────
-    sudo ip netns exec {{vpn_ns}} ip link add eth0 type netkit mode l2 peer name nk-vpn
+    # ── link: vpn ↔ net ────────────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add eth0 type {{link_type}} peer name nk-vpn
     sudo ip netns exec {{vpn_ns}} ip link set nk-vpn netns {{net_ns}}
     sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_inner_ip}}/24 dev eth0
     sudo ip netns exec {{vpn_ns}} ip link set eth0 up
 
-    # ── netkit: cli ↔ net ──────────────────────────
-    sudo ip netns exec {{cli_ns}} ip link add eth0 type netkit mode l2 peer name nk-cli
+    # ── link: cli ↔ net ────────────────────────────
+    sudo ip netns exec {{cli_ns}} ip link add eth0 type {{link_type}} peer name nk-cli
     sudo ip netns exec {{cli_ns}} ip link set nk-cli netns {{net_ns}}
     sudo ip netns exec {{cli_ns}} ip addr add {{cli_ip}}/24 dev eth0
     sudo ip netns exec {{cli_ns}} ip link set eth0 up
 
-    # ── netkit: vpn ↔ web ──────────────────────────
-    sudo ip netns exec {{vpn_ns}} ip link add eth1 type netkit mode l2 peer name nk0
+    # ── link: vpn ↔ web ────────────────────────────
+    sudo ip netns exec {{vpn_ns}} ip link add eth1 type {{link_type}} peer name nk0
     sudo ip netns exec {{vpn_ns}} ip link set nk0 netns {{web_ns}}
     sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_outter_ip}}/24 dev eth1
     sudo ip netns exec {{vpn_ns}} ip link set eth1 up
@@ -101,8 +110,7 @@ up:
     sudo ip netns exec {{vpn_ns}} ip addr add {{vpn_wg}}/16 dev wg0
     echo '{{vpn_key}}' | sudo ip netns exec {{vpn_ns}} wg set wg0 \
         listen-port 51820 private-key /dev/stdin
-    sudo ip netns exec {{vpn_ns}} wg set wg0 \
-        peer {{cli_pub}} allowed-ips {{cli_wg}}/32
+    sudo ip netns exec {{vpn_ns}} wg set wg0 peer {{cli_pub}} allowed-ips {{cli_wg}}/32
     sudo ip netns exec {{vpn_ns}} ip link set wg0 up
 
     # ── WireGuard: cli (client) ────────────────────
@@ -135,7 +143,7 @@ down mode="verbose":
 # Tear down and bring back up
 reload: (down "quiet") up
 
-# Run lab in VM (needs: `usermod -aG kvm $USER`)
+# Run lab in VM (usermod -aG kvm $USER)
 kernel ver="v7.0.1":
     vng -r {{ver}} --name {{prj}} --ssh
 
@@ -170,6 +178,11 @@ status:
     set -euo pipefail
     G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
 
+    lnk=""
+    if sudo ip netns list | grep -q {{prj}}; then
+        lnk=$(sudo ip netns exec {{vpn_ns}} ip -j -d link show eth0 | jq -r '.[0].linkinfo.info_kind')
+    fi
+
     echo -e "${G}═══════════════════════  TOPOLOGY  ════════════════════════════════════════════${R}"
     echo -e "${D}"
     sed -n '/<!-- topology -->/,/<!-- \/topology -->/{//d;/^```/d;p}' README.md
@@ -178,7 +191,7 @@ status:
     echo -e "${G}═════════════════════════  HOST  ═══════════════════════════════${R}"
     echo -e "  kernel:   ${Y}$(uname -r)${R}"
     echo -e "  hostname: ${Y}$(hostname)${R}"
-    # echo "  user:     $(id -un) (uid=$(id -u))"
+    [[ -n "$lnk" ]] && echo -e "  link:     ${Y}${lnk}${R}"
     echo ""
 
     echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
@@ -210,8 +223,9 @@ ping mode="verbose" count="3":
         local label="$1" ns="{{cli_ns}}" ip="$2" timeout="$3"
         if [[ "{{mode}}" == "brief" ]]; then
             if sudo ip netns exec "$ns" ping -q -c1 -W"$timeout" "$ip" &>/dev/null; then
-                avg=$(sudo ip netns exec "$ns" ping -q -c{{count}} -W"$timeout" "$ip" 2>/dev/null \
-                    | awk -F'/' '/^rtt/{printf "%.1fms", $5}')
+                avg=$(sudo ip netns exec "$ns" \
+                    ping -q -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip" 2>/dev/null \
+                        | awk -F'/' '/^rtt/{printf "%.1fms", $5}')
                 echo -e "  $label  ${G}OK${R}  (${avg})"
             else
                 echo -e "  $label  ${C}FAIL${R}"
@@ -222,7 +236,7 @@ ping mode="verbose" count="3":
             echo -ne "  ${Y}ROUTE:${R} "
             sudo ip netns exec "$ns" ip route get "$ip" | head -n1
             echo -ne "  ${Y}PING:${R} "
-            sudo ip netns exec "$ns" ping -c{{count}} -W"$timeout" "$ip"
+            sudo ip netns exec "$ns" ping -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip"
             echo ""
         fi
     }

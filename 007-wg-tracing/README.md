@@ -1,20 +1,20 @@
 # WireGuard eBPF Tracing
 
-Network namespaces + netkit links + WireGuard tunnel + eBPF tracing via Rust/Aya.
+Network namespaces + netkit/veth links + WireGuard tunnel + eBPF tracing via Rust/Aya.
 
 <!-- topology -->
 ```
-    cli                 net/L2                        vpn                web
+    cli  10.5.5.101        net/L2          10.5.0.1  vpn                web
 ┌─────────┐      ┌─────────────────────────┐   ┌──────────────┐      ┌────────┐
 │ ── wg0 -│------│---------tunnel----------│---│- wg0 ────┐   │      │        │
 │     |   │      │                         │   │   |      │   │      │        │
-│   eth0 ═╪══nk══╪═ nk-cli ═ br0 ═ nk-vpn ═╪═══╪═ eth0  eth1 ─┼──nk──┼─ nk0   │
+│   eth0 ═╪══════╪═ nk-cli ═ br0 ═ nk-vpn ═╪═══╪═ eth0  eth1 ─┼──────┼─ nk0   │
 └─────────┘      └─────────────────────────┘   └──────────────┘      └────────┘
-192.168.111.101        192.168.111.254         .111.1 / .200.1   192.168.200.80
+192.168.111.101        192.168.111.254         .111.1 / .222.1   192.168.222.80
 
---- plain (in tunnel)
-─── plain
-═══ encrypted
+--- plain packets (inside tunnel)
+─── plain packets
+═══ encrypted packets
 ```
 <!-- /topology -->
 
@@ -23,7 +23,8 @@ Network namespaces + netkit links + WireGuard tunnel + eBPF tracing via Rust/Aya
 ## Quick start (host kernel)
 
 ```sh
-just demo           # up + status + ping checks
+just demo           # up + status + ping checks (netkit, kernel >= 6.7)
+just link=veth demo # same, using veth pairs (older kernels)
 just enter vpn      # interactive shell (vpn:~#)
 just enter cli      # open in another terminal
 ```
@@ -51,7 +52,7 @@ just enter cli                       # interactive shell
 just enter net                       # interactive shell
 just enter web                       # interactive shell
 
-just enter cli ping 192.168.200.80   # run single command
+just enter cli ping 192.168.222.80   # run single command
 just enter vpn tcpdump -i eth0 -nl   # capture traffic
 just enter vpn wg show               # inspect WireGuard
 ```
