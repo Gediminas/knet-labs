@@ -44,6 +44,8 @@ just kernel-ssh
 just enter cli
 ```
 
+![just demo on kernel v7.0.1](doc/netkit_demo_on_kernel_v7.0.1.png)
+
 ## Enter machines
 
 ```sh
@@ -55,6 +57,8 @@ just enter cli ping 192.168.222.80   # run single command
 just enter vpn tcpdump -i eth0 -nl   # capture traffic
 just enter vpn wg show               # inspect WireGuard
 ```
+
+![Packet flow: ping through WireGuard tunnel](doc/netkit_demo_packet_flow.png)
 
 ## Lab lifecycle
 
