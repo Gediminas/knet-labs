@@ -13,7 +13,7 @@ use aya_ebpf::macros::{kprobe, map};
 use aya_ebpf::programs::{ProbeContext, XdpContext};
 use aya_ebpf::{
     bindings::{BPF_F_RDONLY, xdp_action::XDP_PASS},
-    maps::PerCpuArray,
+    maps::{Array, PerCpuArray},
 };
 use aya_log_ebpf::{debug, error, info, warn};
 use network_types::eth::{EthHdr, EtherType};
@@ -25,8 +25,20 @@ const IPV4_VERSION: u8 = 4;
 const WG_KEY_SIZE: usize = 32;
 pub type WgKey = [u8; WG_KEY_SIZE];
 
+// Kernel struct offsets (BTF: kernel 6.17, wireguard module)
+// bpftool btf dump file /sys/kernel/btf/wireguard
+const OFF_MCW_WORK: usize = 8; // multicore_worker.work (after void *ptr)
+const OFF_ENCRYPT_Q: usize = 64; // wg_device.encrypt_queue
+const OFF_DECRYPT_Q: usize = 320; // wg_device.decrypt_queue
+const OFF_ND_NET: usize = 264; // net_device.nd_net
+const OFF_NS: usize = 152; // net.ns
+const OFF_INUM: usize = 16; // ns_common.inum
+
 #[map]
 static STAT: PerCpuArray<Stat> = PerCpuArray::with_max_entries(1, BPF_F_RDONLY);
+
+#[map]
+static TARGET_NS: Array<u32> = Array::with_max_entries(1, 0);
 
 #[xdp]
 fn inbound_wg_xdp(ctx: XdpContext) -> u32 {
@@ -155,41 +167,60 @@ pub fn napi_gro_receive(ctx: ProbeContext) -> u32 {
     0
 }
 
+// work_struct → multicore_worker.ptr → crypt_queue
+//   → container_of(wg_device, queue) → wg_device.dev
+//   → net_device.nd_net.net → net.ns.inum
+#[inline(always)]
+unsafe fn device_netns_inum(work: *const c_void, queue_offset: usize) -> Result<u32, i32> {
+    unsafe {
+        let queue: *const c_void = bpf_probe_read_kernel(
+            (work as usize - OFF_MCW_WORK) as *const *const c_void,
+        )?;
+        let dev: *const c_void = bpf_probe_read_kernel(
+            (queue as usize - queue_offset) as *const *const c_void,
+        )?;
+        let net: *const c_void = bpf_probe_read_kernel(
+            (dev as usize + OFF_ND_NET) as *const *const c_void,
+        )?;
+        bpf_probe_read_kernel((net as usize + OFF_NS + OFF_INUM) as *const u32)
+    }
+}
+
+#[inline(always)]
+fn is_target_ns(inum: u32) -> bool {
+    match TARGET_NS.get(0) {
+        Some(&target) if target > 0 => inum == target,
+        _ => true,
+    }
+}
+
 #[kprobe]
 pub fn wg_packet_encrypt_worker(ctx: ProbeContext) -> u32 {
-    debug!(&ctx, "kprobe: wg_packet_encrypt_worker()");
-
-    // let netns_ino = BPF_CORE_READ(wg, dev, nd_net.net, ns.inum);
-    // debug!(&ctx, "kprobe: {}", netns_ino);
-
-    // parse_fn_args(&ctx);
-    // let task = unsafe { bpf_get_current_task() as *const task_struct };
-
-    // task->nsproxy->net_ns->ns.inum
-    // let nsproxy = unsafe { bpf_probe_read_kernel(&(*task).nsproxy).unwrap_or_default() };
-    // let net_ns = unsafe { bpf_probe_read_kernel(&(*nsproxy).net_ns).unwrap_or_default() };
-    // let inum = unsafe { bpf_probe_read_kernel(&(*net_ns).ns.inum).unwrap_or_default() };
-
-    // debug!(ctx, "wg_packet_encrypt_worker netns inum={}", inum);
+    let work: *const c_void = match ctx.arg(0) {
+        Some(w) => w,
+        None => return 0,
+    };
+    match unsafe { device_netns_inum(work, OFF_ENCRYPT_Q) } {
+        Ok(inum) if is_target_ns(inum) => {
+            info!(&ctx, "encrypt  netns={}", inum);
+        }
+        _ => {}
+    }
     0
 }
 
 #[kprobe]
 pub fn wg_packet_decrypt_worker(ctx: ProbeContext) -> u32 {
-    debug!(&ctx, "kprobe: wg_packet_decrypt_worker()");
-
-    // let netns_ino = BPF_CORE_READ(wg, dev, nd_net.net, ns.inum);
-    // debug!(&ctx, "kprobe: {}", netns_ino);
-
-    // parse_fn_args(&ctx);
-    // let task = unsafe { bpf_get_current_task() as *const task_struct };
-
-    // task->nsproxy->net_ns->ns.inum
-    // let nsproxy = unsafe { bpf_probe_read_kernel(&(*task).nsproxy).unwrap_or_default() };
-    // let net_ns = unsafe { bpf_probe_read_kernel(&(*nsproxy).net_ns).unwrap_or_default() };
-    // let inum = unsafe { bpf_probe_read_kernel(&(*net_ns).ns.inum).unwrap_or_default() };
-
-    // debug!(ctx, "wg_packet_encrypt_worker netns inum={}", inum);
+    let work: *const c_void = match ctx.arg(0) {
+        Some(w) => w,
+        None => return 0,
+    };
+    match unsafe { device_netns_inum(work, OFF_DECRYPT_Q) } {
+        Ok(inum) if is_target_ns(inum) => {
+            info!(&ctx, "decrypt  netns={}", inum);
+        }
+        _ => {}
+    }
     0
 }
 

@@ -4,9 +4,12 @@
 
 mod cli;
 
+use std::os::unix::fs::MetadataExt;
+
 use anyhow::{Context as _, Result};
 use aya::{
     Ebpf, include_bytes_aligned,
+    maps::Array,
     programs::{KProbe, Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
@@ -45,6 +48,14 @@ async fn main() -> Result<()> {
     // let mut _ebpf = init_with_single_xdp(BEE, &args.iface)?;
     kit::system::legacy_memlock_rlimit_remove()?;
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+
+    let ns_inum = std::fs::metadata("/proc/self/ns/net")?.ino() as u32;
+    println!("netns:      {ns_inum}");
+    {
+        let map = ebpf.map_mut("TARGET_NS").expect("TARGET_NS map");
+        let mut target: Array<_, u32> = Array::try_from(map)?;
+        target.set(0, ns_inum, 0)?;
+    }
 
     init_xdp(&mut ebpf, "inbound_wg_xdp", &args.wg)?;
     init_xdp(&mut ebpf, "inbound_eth_xdp", &args.iface)?;
