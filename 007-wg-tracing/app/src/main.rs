@@ -8,9 +8,9 @@ use std::os::unix::fs::MetadataExt;
 
 use anyhow::{Context as _, Result};
 use aya::{
-    Ebpf, include_bytes_aligned,
+    Btf, Ebpf, include_bytes_aligned,
     maps::Array,
-    programs::{KProbe, Xdp, XdpFlags},
+    programs::{FEntry, KProbe, Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
 use log::{debug, info, warn};
@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
     init_xdp(&mut ebpf, "inbound_wg_xdp", &args.wg)?;
     init_xdp(&mut ebpf, "inbound_eth_xdp", &args.iface)?;
     init_with_kprobe(&mut ebpf)?;
+    init_fentry(&mut ebpf, "dev_queue_xmit", "__dev_queue_xmit")?;
 
     // let stat: PerCpuArray<MapData, Stat> =
     //     PerCpuArray::try_from(ebpf.take_map("STAT").expect("STAT-1")).expect("STAT-2");
@@ -68,6 +69,19 @@ async fn main() -> Result<()> {
     signal::ctrl_c().await?;
 
     info!("Finished");
+    Ok(())
+}
+
+fn init_fentry(ebpf: &mut Ebpf, prog: &str, func: &str) -> Result<()> {
+    info!("Loading fentry: {prog} → {func}");
+    let btf = Btf::from_sys_fs()?;
+    let program: &mut FEntry = ebpf
+        .program_mut(prog)
+        .expect("Missing eBPF program")
+        .try_into()?;
+    program.load(func, &btf)?;
+    program.attach()?;
+    info!("Hooked  fentry: {prog} → {func}");
     Ok(())
 }
 

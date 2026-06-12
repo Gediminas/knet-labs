@@ -9,8 +9,8 @@ use aya_ebpf::bindings::{BPF_F_WRONLY_PROG, task_struct};
 use aya_ebpf::cty::c_void;
 use aya_ebpf::helpers::generated::bpf_get_current_task;
 use aya_ebpf::helpers::{self, bpf_probe_read_kernel};
-use aya_ebpf::macros::{kprobe, map};
-use aya_ebpf::programs::{ProbeContext, XdpContext};
+use aya_ebpf::macros::{fentry, kprobe, map};
+use aya_ebpf::programs::{FEntryContext, ProbeContext, XdpContext};
 use aya_ebpf::{
     bindings::{BPF_F_RDONLY, xdp_action::XDP_PASS},
     maps::{Array, PerCpuArray},
@@ -173,15 +173,12 @@ pub fn napi_gro_receive(ctx: ProbeContext) -> u32 {
 #[inline(always)]
 unsafe fn device_netns_inum(work: *const c_void, queue_offset: usize) -> Result<u32, i32> {
     unsafe {
-        let queue: *const c_void = bpf_probe_read_kernel(
-            (work as usize - OFF_MCW_WORK) as *const *const c_void,
-        )?;
-        let dev: *const c_void = bpf_probe_read_kernel(
-            (queue as usize - queue_offset) as *const *const c_void,
-        )?;
-        let net: *const c_void = bpf_probe_read_kernel(
-            (dev as usize + OFF_ND_NET) as *const *const c_void,
-        )?;
+        let queue: *const c_void =
+            bpf_probe_read_kernel((work as usize - OFF_MCW_WORK) as *const *const c_void)?;
+        let dev: *const c_void =
+            bpf_probe_read_kernel((queue as usize - queue_offset) as *const *const c_void)?;
+        let net: *const c_void =
+            bpf_probe_read_kernel((dev as usize + OFF_ND_NET) as *const *const c_void)?;
         bpf_probe_read_kernel((net as usize + OFF_NS + OFF_INUM) as *const u32)
     }
 }
@@ -225,6 +222,15 @@ pub fn wg_packet_decrypt_worker(ctx: ProbeContext) -> u32 {
 }
 
 use aya_ebpf::macros::xdp;
+
+// __dev_queue_xmit() generic transmit entry
+// /sys/kernel/btf/vmlinux
+// int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
+#[fentry(function = "__dev_queue_xmit")]
+pub fn dev_queue_xmit(ctx: FEntryContext) -> i32 {
+    warn!(&ctx, "fentry: __dev_queue_xmit()");
+    0
+}
 
 // const LOCAL_NETWORK: Cidrv4 = Cidrv4::from_prefix(common::LOCAL_NETWORK, 0);
 
