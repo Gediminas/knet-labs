@@ -11,6 +11,7 @@ use aya::{
     Ebpf, include_bytes_aligned,
     programs::{Xdp, XdpFlags},
 };
+//use kit::caps::Cap;
 use log::{debug, error, info, trace, warn};
 use network_types::{eth::EthHdr, ip::Ipv4Hdr, udp::UdpHdr};
 use poc_common::Stat;
@@ -40,7 +41,8 @@ struct PacketMap(MaybeUninit<[u8; UMEM_SIZE]>);
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
+    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges"); //TODO
+    // kit::caps::require(&[Cap::Bpf, Cap::NetAdmin, Cap::NetRaw, Cap::IpcLock])?;
     kit::logger::init();
     let args = cli::parse();
 
@@ -245,8 +247,6 @@ fn print_packet(ptr: *const u8, desc: &XdpDesc) {
 }
 
 pub fn init_with_single_xdp(bee: &str, iface: &str) -> Result<Ebpf> {
-    kit::system::legacy_memlock_rlimit_remove()?;
-
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
 
     match aya_log::EbpfLogger::init(&mut ebpf) {

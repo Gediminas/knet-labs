@@ -1,3 +1,4 @@
+pub mod caps;
 pub mod logger;
 pub mod system;
 

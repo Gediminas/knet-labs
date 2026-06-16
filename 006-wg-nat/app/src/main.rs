@@ -10,6 +10,7 @@ use aya::{
     programs::{KProbe, Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
+//use kit::caps::Cap;
 use log::{debug, info, warn};
 use tokio::signal;
 
@@ -25,7 +26,8 @@ const BEEE_3: &str = "wg_allowedips_insert_v4";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
+    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges"); //TODO
+    // kit::caps::require(&[Cap::Bpf, Cap::NetAdmin, Cap::Perfmon])?;
     kit::logger::init();
     let args = cli::parse();
 
@@ -39,7 +41,6 @@ async fn main() -> Result<()> {
     println!("=======================");
 
     // let mut _ebpf = init_with_single_xdp(BEE, &args.iface)?;
-    kit::system::legacy_memlock_rlimit_remove()?;
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
     init_with_kprobe(&mut ebpf)?;
     // let stat: PerCpuArray<MapData, Stat> =

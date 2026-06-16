@@ -13,6 +13,7 @@ use aya::{
     util::online_cpus,
 };
 use bytes::BytesMut;
+//use kit::caps::Cap;
 use log::{debug, error, info, warn};
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -48,7 +49,8 @@ static LATENCY_SUM: LazyLock<Arc<AtomicUsize>> = LazyLock::new(|| Arc::new(Atomi
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
+    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges"); //TODO
+    // kit::caps::require(&[Cap::Bpf, Cap::NetAdmin, Cap::Perfmon])?;
     kit::logger::init();
     let args = cli::parse();
 
@@ -288,8 +290,6 @@ fn print_report(args: &Opt, total_packets: usize, elapsed: f64, sys_ms: f64, usr
 }
 
 fn init_with_single_xdp(bee: &str, iface: &str) -> Result<Ebpf> {
-    kit::system::legacy_memlock_rlimit_remove()?;
-
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
 
     kit::init_aya_log(&mut ebpf).expect("init aya-log");

@@ -13,6 +13,7 @@ use aya::{
     programs::{FEntry, KProbe, Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
+use kit::caps::Cap;
 use log::{debug, info, warn};
 use std::time::Duration;
 use tokio::signal;
@@ -29,60 +30,9 @@ const BEEE_3: &str = "wg_packet_encrypt_worker";
 // wg_allowedips_insert_v4
 // ip_tunnel_parse_protocol
 
-/// Effective capabilities required to load/attach the programs:
-/// CAP_BPF (load), CAP_PERFMON (kprobe/fentry), CAP_NET_ADMIN (XDP attach).
-/// Checks the effective set, so it passes both as root and inside `just caps`.
-fn ensure_caps() -> Result<()> {
-    const NEEDED: &[(u8, &str)] = &[(12, "cap_net_admin"), (38, "cap_perfmon"), (39, "cap_bpf")];
-
-    #[repr(C)]
-    struct CapHeader {
-        version: u32,
-        pid: i32,
-    }
-    #[repr(C)]
-    #[derive(Clone, Copy, Default)]
-    struct CapData {
-        effective: u32,
-        permitted: u32,
-        inheritable: u32,
-    }
-
-    let hdr = CapHeader {
-        version: 0x2008_0522,
-        pid: 0,
-    }; // _LINUX_CAPABILITY_VERSION_3
-    let mut data = [CapData::default(); 2];
-    let rc = unsafe {
-        libc::syscall(
-            libc::SYS_capget,
-            &hdr as *const CapHeader,
-            data.as_mut_ptr(),
-        )
-    };
-    anyhow::ensure!(
-        rc == 0,
-        "capget failed: {}",
-        std::io::Error::last_os_error()
-    );
-
-    let has = |cap: u8| data[(cap / 32) as usize].effective & (1u32 << (cap % 32)) != 0;
-    let missing: Vec<&str> = NEEDED
-        .iter()
-        .filter(|&&(c, _)| !has(c))
-        .map(|&(_, n)| n)
-        .collect();
-    anyhow::ensure!(
-        missing.is_empty(),
-        "missing {} — run via `just caps` or as root",
-        missing.join(", ")
-    );
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    ensure_caps()?;
+    kit::caps::require(&[Cap::Bpf, Cap::NetAdmin, Cap::Perfmon])?;
     kit::logger::init();
     let args = cli::parse();
 

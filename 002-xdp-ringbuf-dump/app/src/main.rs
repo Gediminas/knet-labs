@@ -10,6 +10,7 @@ use aya::{
     Ebpf, include_bytes_aligned,
     programs::{Xdp, XdpFlags},
 };
+//use kit::caps::Cap;
 use log::{debug, info, warn};
 use pcap_file_tokio::pcap::{PcapPacket, PcapWriter};
 use poc_common::RingEventHeader;
@@ -27,7 +28,8 @@ const BEE: &str = "poc_xdp_ring";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
+    anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges"); //TODO
+    // kit::caps::require(&[Cap::Bpf, Cap::NetAdmin])?;
     kit::logger::init();
     let args = cli::parse();
 
@@ -94,8 +96,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 pub fn init_with_single_xdp(bee: &str, iface: &str) -> Result<Ebpf> {
-    kit::system::legacy_memlock_rlimit_remove()?;
-
     let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
 
     match aya_log::EbpfLogger::init(&mut ebpf) {

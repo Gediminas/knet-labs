@@ -263,11 +263,11 @@ ping mode="verbose" count="3":
 # Dev (eBPF tracing)
 ###################################################
 
-build:
-    cargo build
+build *args:
+    cargo build {{args}}
 
-run:
-    cargo run
+run *args:
+    cargo run {{args}}
 
 # Watch + build
 dev-build:
