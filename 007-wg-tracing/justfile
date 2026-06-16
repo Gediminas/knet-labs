@@ -32,12 +32,41 @@ link_type := if link == "netkit" { "netkit mode l2" } \
 
 ping_interval := "0.05"
 
+###################################################
+###################################################
+ 
 help:
     @just --list
 
-# For lazy
-root:
-    sudo -Es
+caps:
+    #!/usr/bin/env bash
+    if (( 0x$(awk '/^CapEff/{print $2}' /proc/$$/status) )); then
+        echo "Already in capability shell." >&2; exit 1
+    fi
+    if grep -q virtme /proc/cmdline; then
+        echo "Already privileged inside the VM." >&2; exit 1
+    fi
+    case "$(basename "$SHELL")" in
+      fish) launch='exec fish -C "functions -c fish_prompt _k; function fish_prompt; set_color FF8800 -o; printf \"⚡ \"; set_color normal; _k; end"' ;;
+      *)    launch='exec bash --rcfile <(cat ~/.bashrc 2>/dev/null; echo "PS1=\"⚡ \$PS1\"")' ;;
+    esac
+    exec sudo -E capsh --keep=1 --user="$(id -un)" \
+        --inh=cap_bpf,cap_perfmon,cap_net_admin,cap_sys_admin \
+        --addamb=cap_bpf,cap_perfmon,cap_net_admin,cap_sys_admin \
+        -- -c "$launch"
+
+# Run lab in VM (usermod -aG kvm $USER) — from a normal terminal, not `just caps`
+kernel ver="v7.0.1":
+    #!/usr/bin/env bash
+    if (( 0x$(awk '/^CapEff/{print $2}' /proc/$$/status) )); then
+        echo "In a capability shell. Exit it to run VM." >&2; exit 1
+    fi
+    vng -r {{ver}} --name {{prj}} --ssh
+
+# Connect to running VM
+kernel-ssh:
+    vng --name {{prj}} --ssh-client
+
 
 ###################################################
 # Lifecycle
@@ -47,13 +76,13 @@ root:
 up:
     #!/usr/bin/env bash
     set -euo pipefail
-    sudo -v
 
-    if sudo ip netns list | grep -q {{prj}}; then
+    if ip netns list | grep -q {{prj}}; then
         echo "Lab already running. Run: just reload" && exit 1
     fi
 
     # ── namespaces ─────────────────────────────────
+    sudo -v
     sudo ip netns add {{vpn_ns}}
     sudo ip netns add {{cli_ns}}
     sudo ip netns add {{net_ns}}
@@ -124,22 +153,13 @@ up:
 # Tear down the lab
 down mode="verbose":
     #!/usr/bin/env bash
-    sudo -v
-    ns=$(sudo ip netns list | awk '/{{prj}}/{print $1}')
+    ns=$(ip netns list | awk '/{{prj}}/{print $1}')
     [[ -z "$ns" ]] && { [[ "{{mode}}" != "quiet" ]] && echo "Nothing to tear down."; exit 0; }
     echo "$ns" | xargs -rn1 sudo ip netns del
     echo "* Lab torn down."
 
 # Tear down and bring back up
 reload: (down "quiet") up
-
-# Run lab in VM (usermod -aG kvm $USER)
-kernel ver="v7.0.1":
-    vng -r {{ver}} --name {{prj}} --ssh
-
-# Connect to running VM
-kernel-ssh:
-    vng --name {{prj}} --ssh-client
 
 ###################################################
 # Lab
@@ -156,10 +176,10 @@ enter machine *ARGS:
         *)   echo "Unknown: {{machine}} (try: vpn, cli, net, web)"; exit 1 ;;
     esac
     if [[ -z "{{ARGS}}" ]]; then
-        sudo HOME="$HOME" ip netns exec "$ns" unshare --uts bash -c \
+        ip netns exec "$ns" unshare --uts bash -c \
             'hostname {{machine}}; exec bash --rcfile <(echo "HISTFILE=/tmp/{{prj}}-{{machine}}.history; PS1=\"\[\e[1;32m\]\h\[\e[0m\]:\w\\$ \"")'
     else
-        sudo ip netns exec "$ns" {{ARGS}}
+        ip netns exec "$ns" {{ARGS}}
     fi
 
 # Topology + live lab state
@@ -169,8 +189,8 @@ status:
     G='\033[1;32m' C='\033[1;36m' Y='\033[1;33m' D='\033[2m' R='\033[0m'
 
     lnk=""
-    if sudo ip netns list | grep -q {{prj}}; then
-        lnk=$(sudo ip netns exec {{vpn_ns}} ip -j -d link show eth0 | jq -r '.[0].linkinfo.info_kind')
+    if ip netns list | grep -q {{prj}}; then
+        lnk=$(ip netns exec {{vpn_ns}} ip -j -d link show eth0 | jq -r '.[0].linkinfo.info_kind')
     fi
 
     echo -e "${G}═══════════════════════  TOPOLOGY  ════════════════════════════════════════════${R}"
@@ -185,7 +205,7 @@ status:
     echo ""
 
     echo -e "${G}════════════════════  LAB NAMESPACES  ══════════════════════════${R}"
-    namespaces=$(sudo ip netns list | grep {{prj}} | sort || true)
+    namespaces=$(ip netns list | grep {{prj}} | sort || true)
     if [[ -z "$namespaces" ]]; then
         echo -e "  ${Y}Lab is not running.${R} Run: just up"
         echo ""
@@ -195,13 +215,13 @@ status:
     for ns in $namespaces; do
         echo -e "${C}  $ns ${R}"
         fmt='.[] | "     \(.ifindex) \(.ifname)\t\(.operstate)\t\([.addr_info[]? | select(.family=="inet") | .local] | join(" "))"'
-        sudo ip netns exec "$ns" ip -j addr | jq -r "$fmt"
+        ip netns exec "$ns" ip -j addr | jq -r "$fmt"
     done
     echo ""
 
     echo -e "${G}═════════════════════  WG HANDSHAKES  ══════════════════════════${R}"
-    echo -n "    cli: "; sudo ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
-    echo -n "    vpn: "; sudo ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
+    echo -n "    cli: "; ip netns exec {{cli_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
+    echo -n "    vpn: "; ip netns exec {{vpn_ns}} wg show wg0 | grep -oP 'latest handshake: \K.*'
 
 # Ping connectivity checks
 ping mode="verbose" count="3":
@@ -212,8 +232,8 @@ ping mode="verbose" count="3":
     check() {
         local label="$1" ns="{{cli_ns}}" ip="$2" timeout="$3"
         if [[ "{{mode}}" == "brief" ]]; then
-            if sudo ip netns exec "$ns" ping -q -c1 -W"$timeout" "$ip" &>/dev/null; then
-                avg=$(sudo ip netns exec "$ns" \
+            if ip netns exec "$ns" ping -q -c1 -W"$timeout" "$ip" &>/dev/null; then
+                avg=$(ip netns exec "$ns" \
                     ping -q -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip" 2>/dev/null \
                         | awk -F'/' '/^rtt/{printf "%.1fms", $5}')
                 echo -e "  $label  ${G}OK${R}  (${avg})"
@@ -224,9 +244,9 @@ ping mode="verbose" count="3":
         else
             echo -e "${G}▶▶▶ $label${R}"
             echo -ne "  ${Y}ROUTE:${R} "
-            sudo ip netns exec "$ns" ip route get "$ip" | head -n1
+            ip netns exec "$ns" ip route get "$ip" | head -n1
             echo -ne "  ${Y}PING:${R} "
-            sudo ip netns exec "$ns" ping -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip"
+            ip netns exec "$ns" ping -c{{count}} -i{{ping_interval}} -W"$timeout" "$ip"
             echo ""
         fi
     }
@@ -255,20 +275,16 @@ dev-build:
 
 # Watch + run with entr
 dev-run *args:
-    echo {{app}} | entr -rc sudo {{app}} {{args}}
+    echo {{app}} | entr -rc {{app}} {{args}}
 
 # Watch + build + run
-dev *args:
+dev-host *args:
     cargo watch --clear -x "build" -s "\
         chown $(logname):$(logname) -R target ;\
         cargo run -- {{args}}"
 
 # Watch + build + run in vpn ns
-dev-ns *args:
+dev *args:
     cargo watch --clear -x "build" -s "\
         chown $(logname):$(logname) -R target ;\
-        sudo ip netns exec {{vpn_ns}} $(pwd)/{{app}} --wg wg0 --iface eth0 {{args}}"
-
-# Fix target ownership after root
-unroot:
-    sudo -E chown $(logname):$(logname) -R target
+        ip netns exec {{vpn_ns}} $(pwd)/{{app}} --wg wg0 --iface eth0 {{args}}"
