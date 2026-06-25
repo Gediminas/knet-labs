@@ -11,6 +11,7 @@
 - [006](./006-wg-nat):                TBD: WireGuard Local-IP NAT
 - [007](./007-wg-tracing):            WIP: WireGuard Tracing
 - [008](./008-vng+netns+netkit):      Demo: **virtme-ng** + **netns** + **netkit** + WireGuard lab
+- [009](./009-split-btf):             **module fentry** via **split BTF** (raw BPF syscalls)
 - ...
 
 

@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "app",
+    "bpf",
+]
+default-members = ["app"]
+
+[workspace.package]
+description = "fentry on a kernel-module function via split BTF, loaded by hand (aya can't yet)"
+version = "0.1.0"
+edition = "2024"
+authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+aya               = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-build         = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-ebpf          = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-ebpf-bindings = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-log           = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-log-ebpf      = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-obj           = { git = "https://github.com/aya-rs/aya", default-features = false }
+
+anyhow = { version = "1", default-features = false }
+cargo_metadata = { version = "0.23.1", default-features = false }
+clap = { version = "4.5.57", default-features = false, features = ["std"] } # std -> https://github.com/clap-rs/clap/blob/61f5ee5/clap_builder/src/lib.rs#L15.
+libc = { version = "0.2.180", default-features = false }
+log = { version = "0.4.29", default-features = false }
+tokio = { version = "1.49.0", default-features = false }
+which = { version = "8.0.0", default-features = false }
+
+kit = { path = "../kit", default-features = false }
+kmod-btf = { path = "../kmod-btf" }
+
+[profile.release.package.poc-bpf]
+debug = 2
+codegen-units = 1

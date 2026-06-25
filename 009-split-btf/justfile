@@ -1,0 +1,58 @@
+#!/usr/bin/env just --justfile
+
+prj   := "k009"
+ns    := prj
+wg_if := "wg0"
+wg_ip := "10.9.0.1"
+dst   := "10.9.0.2"      # in wg0's subnet → routes to wg0 → wg_xmit fires
+app   := "target/x86_64-unknown-linux-musl/debug/poc"
+
+help:
+    @just --list
+
+build *args:
+    cargo build {{args}}
+
+up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ip netns list | grep -qw {{ns}}; then echo "{{ns}} already up"; exit 0; fi
+    sudo -v
+    sudo ip netns add {{ns}}
+    sudo ip netns exec {{ns}} ip link set lo up
+    sudo ip netns exec {{ns}} ip link add {{wg_if}} type wireguard
+    wg genkey | sudo ip netns exec {{ns}} wg set {{wg_if}} private-key /dev/stdin
+    sudo ip netns exec {{ns}} wg set {{wg_if}} peer "$(wg genkey | wg pubkey)" allowed-ips {{dst}}/32
+    sudo ip netns exec {{ns}} ip addr add {{wg_ip}}/24 dev {{wg_if}}
+    sudo ip netns exec {{ns}} ip link set {{wg_if}} up
+    echo "* {{ns}}: {{wg_if}} {{wg_ip}} up"
+
+down:
+    -sudo ip netns del {{ns}}
+
+# Capability shell, sudo once (cap_sys_admin,cap_bpf,cap_perfmon)
+caps:
+    #!/usr/bin/env bash
+    if (( 0x$(awk '/^CapEff/{print $2}' /proc/$$/status) )); then
+        echo "Already in capability shell." >&2; exit 1
+    fi
+    case "$(basename "$SHELL")" in
+      fish) launch='exec fish -C "functions -c fish_prompt _k; function fish_prompt; set_color FF8800 -o; printf \"⚡ \"; set_color normal; _k; end"' ;;
+      *)    launch='exec bash --rcfile <(cat ~/.bashrc 2>/dev/null; echo "PS1=\"⚡ \$PS1\"")' ;;
+    esac
+    exec sudo -E capsh --keep=1 --user="$(id -un)" \
+        --inh=cap_bpf,cap_perfmon,cap_sys_admin \
+        --addamb=cap_bpf,cap_perfmon,cap_sys_admin \
+        -- -c "$launch"
+
+# Send a packet through wg0 → wg_xmit
+trigger:
+    -sudo ip netns exec {{ns}} ping -c1 -W1 {{dst}}
+
+# Run the app (needs caps; e.g. inside `just caps`).
+run *args:
+    cargo run -- {{args}}
+
+run-bin *args:
+    {{app}} {{args}}
+

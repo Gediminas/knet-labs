@@ -1,0 +1,17 @@
+[package]
+name = "kmod-btf"
+description = "Attach an aya fentry program to a kernel-module function via split BTF (until aya supports it natively — see aya issues #300/#301)"
+version = "0.1.0"
+edition = "2024"
+authors = ["Gediminas Lūžys <163294+gediminas@users.noreply.github.com>"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+aya     = { git = "https://github.com/aya-rs/aya", default-features = false }
+aya-obj = { git = "https://github.com/aya-rs/aya", default-features = false }
+anyhow  = { version = "1", default-features = false }
+libc    = { version = "0.2", default-features = false }
+log     = { version = "0.4", default-features = false }
+
+[lib]
+path = "src/lib.rs"
