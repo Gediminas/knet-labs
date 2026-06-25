@@ -40,13 +40,13 @@ namespace/poc commands without re-typing your password.
 
 ```sh
 # Terminal 1
-just build
-just up     # `just [link=veth] up` for older kernels
-just status # Optional
-just enter vpn ./target/x86_64-unknown-linux-musl/debug/poc
+just up     # `just link=veth up` for older kernels
+just caps
+just run
 
 # Terminal 2
-just enter cli ping 192.168.222.80 -c 3
+just caps
+just enter cli ping 192.168.222.80 -c 3  # or `just ping`
 ```
 
 ## Capability shell (sudo once)

@@ -11,13 +11,13 @@ license.workspace = true
 anyhow = { workspace = true }
 aya = { workspace = true }
 aya-log = { workspace = true }
-libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "signal", "fs", "sync"] }
 clap = { workspace = true, features = ["derive"] }
 
 poc-common = { workspace = true, features = ["user"] }
 kit = { workspace = true, features = ["user"] }
+kmod-btf = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

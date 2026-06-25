@@ -4,19 +4,19 @@
 
 mod cli;
 
-use std::os::unix::fs::MetadataExt;
-
 use anyhow::{Context as _, Result};
 use aya::{
-    Btf, Ebpf, include_bytes_aligned,
+    Ebpf, include_bytes_aligned,
     maps::Array,
-    programs::{FEntry, KProbe, Xdp, XdpFlags},
+    programs::{KProbe, Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
 use kit::caps::Cap;
 use log::{debug, info, warn};
-use std::time::Duration;
+use std::{os::unix::fs::MetadataExt, time::Duration};
 use tokio::signal;
+
+use kmod_btf::attach_fentry;
 
 // const HOOK_1: &str = "ip_tunnel_parse_protocol";
 // const BEEE_1: &str = "ip_tunnel_parse_protocol";
@@ -32,7 +32,8 @@ const BEEE_3: &str = "wg_packet_encrypt_worker";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    kit::caps::require(&[Cap::Bpf, Cap::NetAdmin, Cap::Perfmon])?;
+    // kit::caps::require(&[Cap::Bpf, Cap::NetAdmin, Cap::Perfmon])?;
+    // anyhow::ensure!(unsafe { libc::getuid() == 0 }, "Requires root privileges");
     kit::logger::init();
     let args = cli::parse();
 
@@ -47,7 +48,8 @@ async fn main() -> Result<()> {
     // std::thread::sleep(Duration::from_secs(1));
 
     // let mut _ebpf = init_with_single_xdp(BEE, &args.iface)?;
-    let mut ebpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc")))?;
+    let elf = include_bytes_aligned!(concat!(env!("OUT_DIR"), "/poc"));
+    let mut ebpf = Ebpf::load(elf)?;
 
     let ns_inum = std::fs::metadata("/proc/self/ns/net")?.ino() as u32;
     println!("netns:      {ns_inum}");
@@ -59,8 +61,14 @@ async fn main() -> Result<()> {
 
     init_xdp(&mut ebpf, "inbound_wg_xdp", &args.wg)?;
     init_xdp(&mut ebpf, "inbound_eth_xdp", &args.iface)?;
+
+    // fentry on the WireGuard module function `wg_xmit`, loaded via raw bpf()
+    // syscalls (aya can't target a module function). Its map/.rodata refs are
+    // relocated against aya's loaded maps, so this MUST run before EbpfLogger::init
+    // (inside init_with_kprobe) does `take_map("AYA_LOGS")`.
+    let _wg_xmit_fentry = attach_fentry(&ebpf, elf, "wg_xmit", "wg_xmit", "wireguard")?;
+
     init_with_kprobe(&mut ebpf)?;
-    init_fentry(&mut ebpf, "dev_queue_xmit", "__dev_queue_xmit")?;
 
     // let stat: PerCpuArray<MapData, Stat> =
     //     PerCpuArray::try_from(ebpf.take_map("STAT").expect("STAT-1")).expect("STAT-2");
@@ -69,19 +77,6 @@ async fn main() -> Result<()> {
     signal::ctrl_c().await?;
 
     info!("Finished");
-    Ok(())
-}
-
-fn init_fentry(ebpf: &mut Ebpf, prog: &str, func: &str) -> Result<()> {
-    info!("Loading fentry: {prog} → {func}");
-    let btf = Btf::from_sys_fs()?;
-    let program: &mut FEntry = ebpf
-        .program_mut(prog)
-        .expect("Missing eBPF program")
-        .try_into()?;
-    program.load(func, &btf)?;
-    program.attach()?;
-    info!("Hooked  fentry: {prog} → {func}");
     Ok(())
 }
 
@@ -96,7 +91,9 @@ pub fn init_xdp(ebpf: &mut Ebpf, bee: &str, iface: &str) -> Result<()> {
     Ok(())
 }
 
-fn init_with_kprobe(ebpf: &mut Ebpf) -> Result<()> {
+/// Sets up `EbpfLogger` and spawns a task that drains the `AYA_LOGS` map to the
+/// host logger. Safe to call once; the fentry program shares this same map.
+fn init_logger(ebpf: &mut Ebpf) -> Result<()> {
     match EbpfLogger::init(ebpf) {
         Err(e) => {
             // This can happen if you remove all log statements from your eBPF program.
@@ -114,6 +111,11 @@ fn init_with_kprobe(ebpf: &mut Ebpf) -> Result<()> {
             });
         }
     }
+    Ok(())
+}
+
+fn init_with_kprobe(ebpf: &mut Ebpf) -> Result<()> {
+    init_logger(ebpf)?;
 
     // {
     //     info!("Loading '{HOOK_1}' (kprobe: {BEEE_1})");

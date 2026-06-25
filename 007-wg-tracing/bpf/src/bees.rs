@@ -223,12 +223,15 @@ pub fn wg_packet_decrypt_worker(ctx: ProbeContext) -> u32 {
 
 use aya_ebpf::macros::xdp;
 
-// __dev_queue_xmit() generic transmit entry
-// /sys/kernel/btf/vmlinux
-// int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
 #[fentry(function = "__dev_queue_xmit")]
 pub fn dev_queue_xmit(ctx: FEntryContext) -> i32 {
     warn!(&ctx, "fentry: __dev_queue_xmit()");
+    0
+}
+
+#[fentry(function = "wg_xmit")]
+pub fn wg_xmit(ctx: FEntryContext) -> i32 {
+    warn!(&ctx, "fentry: wg_xmit()");
     0
 }
 

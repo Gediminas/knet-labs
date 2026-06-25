@@ -424,6 +424,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmod-btf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aya",
+ "aya-obj",
+ "libc",
+ "log",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -520,7 +531,7 @@ dependencies = [
  "cargo_metadata",
  "clap",
  "kit",
- "libc",
+ "kmod-btf",
  "log",
  "poc-bpf",
  "poc-common",
