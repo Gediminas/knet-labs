@@ -49,11 +49,10 @@ demo: reload status (ping "brief")
 up:
     #!/usr/bin/env bash
     set -euo pipefail
-    sudo -v
-
-    if sudo ip netns list | grep -q {{prj}}; then
+    if ip netns list | grep -q {{prj}}; then
         echo "Lab already running. Run: just reload" && exit 1
     fi
+    sudo -v
 
     # ── namespaces ─────────────────────────────────
     sudo ip netns add {{cli_ns}}
@@ -110,8 +109,7 @@ up:
 # Tear down the lab
 down mode="verbose":
     #!/usr/bin/env bash
-    sudo -v
-    ns=$(sudo ip netns list | awk '/{{prj}}/{print $1}')
+    ns=$(ip netns list | awk '/{{prj}}/{print $1}')
     [[ -z "$ns" ]] && { [[ "{{mode}}" != "quiet" ]] && echo "Nothing to tear down."; exit 0; }
     echo "$ns" | xargs -rn1 sudo ip netns del
     echo "* Lab torn down."

@@ -41,10 +41,10 @@ help:
 caps:
     #!/usr/bin/env bash
     if (( 0x$(awk '/^CapEff/{print $2}' /proc/$$/status) )); then
-        echo "Already in capability shell." >&2; exit 1
+        echo "Already in capability shell." >&2; exit 0
     fi
     if grep -q virtme /proc/cmdline; then
-        echo "Already privileged inside the VM." >&2; exit 1
+        echo "Already privileged inside the VM." >&2; exit 0
     fi
     case "$(basename "$SHELL")" in
       fish) launch='exec fish -C "functions -c fish_prompt _k; function fish_prompt; set_color FF8800 -o; printf \"⚡ \"; set_color normal; _k; end"' ;;
@@ -59,7 +59,7 @@ caps:
 kernel ver="v7.0.1":
     #!/usr/bin/env bash
     if (( 0x$(awk '/^CapEff/{print $2}' /proc/$$/status) )); then
-        echo "In a capability shell. Exit it to run VM." >&2; exit 1
+        echo "In a capability shell. Exit it to run VM." >&2; exit 0
     fi
     vng -r {{ver}} --name {{prj}} --ssh
 
@@ -78,7 +78,7 @@ up:
     set -euo pipefail
 
     if ip netns list | grep -q {{prj}}; then
-        echo "Lab already running. Run: just reload" && exit 1
+        echo "Lab already running. Run: just reload" && exit 0
     fi
 
     # ── namespaces ─────────────────────────────────
@@ -173,7 +173,7 @@ enter machine *ARGS:
         cli) ns="{{cli_ns}}" ;;
         net) ns="{{net_ns}}" ;;
         web) ns="{{web_ns}}" ;;
-        *)   echo "Unknown: {{machine}} (try: vpn, cli, net, web)"; exit 1 ;;
+        *)   echo "Unknown: {{machine}} (try: vpn, cli, net, web)"; exit 0 ;;
     esac
     if [[ -z "{{ARGS}}" ]]; then
         ip netns exec "$ns" unshare --uts bash -c \
@@ -267,7 +267,7 @@ build *args:
     cargo build {{args}}
 
 run *args:
-    cargo run {{args}}
+    ip netns exec {{vpn_ns}} cargo run -- {{args}}
 
 # Watch + build
 dev-build:

@@ -27,14 +27,17 @@ up:
     sudo ip netns exec {{ns}} ip link set {{wg_if}} up
     echo "* {{ns}}: {{wg_if}} {{wg_ip}} up"
 
+# Tear down (no sudo prompt if not running)
 down:
-    -sudo ip netns del {{ns}}
+    #!/usr/bin/env bash
+    if ! ip netns list | grep -qw {{ns}}; then echo "{{ns}} not running"; exit 0; fi
+    sudo ip netns del {{ns}} && echo "* {{ns}} down"
 
 # Capability shell, sudo once (cap_sys_admin,cap_bpf,cap_perfmon)
 caps:
     #!/usr/bin/env bash
     if (( 0x$(awk '/^CapEff/{print $2}' /proc/$$/status) )); then
-        echo "Already in capability shell." >&2; exit 1
+        echo "Already in capability shell." >&2; exit 0
     fi
     case "$(basename "$SHELL")" in
       fish) launch='exec fish -C "functions -c fish_prompt _k; function fish_prompt; set_color FF8800 -o; printf \"⚡ \"; set_color normal; _k; end"' ;;
@@ -47,12 +50,13 @@ caps:
 
 # Send a packet through wg0 → wg_xmit
 trigger:
-    -sudo ip netns exec {{ns}} ping -c1 -W1 {{dst}}
+    -ip netns exec {{ns}} ping -c1 -W1 {{dst}}
 
-# Run the app (needs caps; e.g. inside `just caps`).
+# Build + run in the lab netns
 run *args:
-    cargo run -- {{args}}
+    ip netns exec {{ns}} cargo run -- {{args}}
 
+# Run the prebuilt binary in the lab netns (no build)
 run-bin *args:
-    {{app}} {{args}}
+    ip netns exec {{ns}} $(pwd)/{{app}} {{args}}
 
