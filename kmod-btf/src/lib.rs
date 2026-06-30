@@ -211,7 +211,7 @@ fn btf_header(data: &[u8]) -> Result<(usize, usize, usize, u32)> {
     if magic != BTF_MAGIC {
         bail!("bad BTF magic {magic:#x} (big-endian BTF unsupported)");
     }
-    let u32_at = |off: usize| u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+    let u32_at = |i| u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]);
     Ok((
         u32_at(4) as usize,  // hdr_len
         u32_at(8) as usize,  // type_off
