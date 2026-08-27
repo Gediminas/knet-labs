@@ -1,6 +1,8 @@
 //! Raw-syscall loader for fentry on kernel-module functions (split BTF).
 //! See README for the why; `attach_fentry` is the only public entry point.
 
+// TODO: Watch https://github.com/aya-rs/aya/pull/1593
+
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::io;
