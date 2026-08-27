@@ -1,0 +1,17 @@
+#!/usr/bin/env just --justfile
+
+help:
+    @just --list
+
+parse-btf *ARGS:
+    ./parse-btf.py {{ARGS}}
+
+parse-btf--linux:
+    ./parse-btf.py
+
+parse-btf--wireguard:
+    ./parse-btf.py /sys/kernel/btf/wireguard 20
+
+# Load the wireguard module so /sys/kernel/btf/wireguard exists
+up:
+    sudo modprobe wireguard
